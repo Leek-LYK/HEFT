@@ -174,6 +174,33 @@ class RobanProfileTest(unittest.TestCase):
                 cfg.algo.student_latent_quantizer.scale, 4.499549865722656
             )
 
+    def test_roban_smoke_phase_configs_are_bounded_and_noise_regexes_match(self):
+        expected = (
+            ("roban_smoke_train", "train", False),
+            ("roban_smoke_adapt", "adapt", True),
+            ("roban_smoke_finetune", "finetune", True),
+        )
+        for experiment, phase, student_train in expected:
+            cfg = _compose_profile(
+                "Roban_tracking", (f"+exp={experiment}",)
+            )
+            self.assertEqual(cfg.algo.phase, phase)
+            self.assertEqual(cfg.task.num_envs, 64)
+            self.assertEqual(cfg.algo.train_every, 8)
+            self.assertEqual(cfg.algo.ppo_epochs, 1)
+            self.assertEqual(cfg.algo.num_minibatches, 1)
+            self.assertEqual(cfg.total_frames, 1024)
+            self.assertEqual(cfg.task.student_train, student_train)
+            self.assertEqual(cfg.wandb.mode, "disabled")
+            self.assertTrue(cfg.headless)
+            self.assertFalse(cfg.eval_render)
+            self.assertEqual(
+                cfg.task.profile.command.dataset.groups[0].teacher_mem_path,
+                "_smoke/roban/main_subset",
+            )
+            for pattern in cfg.algo.init_noise_scale_overrides:
+                self.assertTrue(_matches(pattern, ROBAN_JOINT_ORDER), pattern)
+
     def test_g1_and_l7_keep_profile_driven_contact_and_default_policy_contract(self):
         expected_feet = ["left_ankle_roll_link", "right_ankle_roll_link"]
         for profile, robot_cfg in (

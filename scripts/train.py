@@ -43,6 +43,9 @@ CONFIG_PATH = os.path.join(FILE_PATH, "..", "cfg")
 def main(cfg: DictConfig):
     OmegaConf.resolve(cfg)
     OmegaConf.set_struct(cfg, False)
+    smoke_enabled = bool(cfg.get("smoke", {}).get("enabled", False))
+    if smoke_enabled and torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     
     print(f"is_distributed: {aa.is_distributed()}, local_rank: {aa.get_local_rank()}/{aa.get_world_size()}")
     if aa.is_distributed():
@@ -61,6 +64,16 @@ def main(cfg: DictConfig):
     total_iters = total_frames // frames_per_batch
     save_interval = cfg.get("save_interval", -1)
     start_iter = cfg.get("start_iter", 0)
+    smoke = None
+    if smoke_enabled:
+        from active_adaptation.utils.ppo_smoke import PPOSmokeDiagnostics
+        smoke = PPOSmokeDiagnostics(
+            cfg,
+            env,
+            policy,
+            vecnorm,
+            total_iters=total_iters,
+        )
     need_logging = aa.is_main_process() and cfg.wandb.get("mode", "disabled") != "disabled"
     if need_logging:
         default_run_name = f"{cfg.exp_name}-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M')}"
@@ -113,6 +126,8 @@ def main(cfg: DictConfig):
     rollout_policy = policy.get_rollout_policy("train")
     env_frames = 0
     carry = env.reset()
+    if smoke is not None:
+        smoke.on_reset(carry)
 
     assert env.training
     iter_range = range(start_iter, total_iters)
@@ -166,6 +181,9 @@ def main(cfg: DictConfig):
                     td["next", "state_value"]
                 )
 
+                if smoke is not None:
+                    smoke.observe_transition(td, iteration=i, rollout_step=t)
+
                 # clean up tensordict
                 td["next"] = td["next"].select("reward", "done", "terminated", "state_value", "stats", strict=False)
                 td = td.select(
@@ -194,8 +212,12 @@ def main(cfg: DictConfig):
             policy.step_schedule(progress_ratio, i)
         if hasattr(env, "step_schedule"):
             env.step_schedule(progress_ratio, i)
-        
+
+        if smoke is not None:
+            smoke.before_update(data, iteration=i)
         train_carry = policy.train_op(data, vecnorm)
+        if smoke is not None:
+            smoke.after_update(data, train_carry, iteration=i)
         training_time = time.perf_counter() - training_start
 
         if need_logging:
@@ -222,6 +244,10 @@ def main(cfg: DictConfig):
             run.log(info, step=i)
             print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, (float, int))}))
     
+    if smoke is not None:
+        smoke.finalize()
+        env.close(raise_if_closed=False)
+
     if aa.is_main_process():
         if train_recorder is not None:
             train_recorder.flush()

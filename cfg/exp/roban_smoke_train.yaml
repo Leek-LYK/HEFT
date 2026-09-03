@@ -1,0 +1,59 @@
+# @package _global_
+
+# Bounded Roban PPO smoke settings.  This selects the official Teacher phase;
+# only runtime scale and local diagnostics differ from a production run.
+defaults:
+  - override /algo: ppo_train
+
+algo:
+  train_every: 8
+  ppo_epochs: 1
+  num_minibatches: 1
+  init_noise_scale: 1.0
+  init_noise_scale_overrides:
+    "^waist_yaw_joint$": 1.5
+    "^leg_[lr][1-4]_joint$": 1.5
+    "^leg_[lr][5-6]_joint$": 1.0
+    "^zarm_[lr][1-4]_joint$": 1.2
+  load_noise_scale: null
+
+task:
+  num_envs: 64
+  student_train: false
+  profile:
+    command:
+      dataset:
+        groups:
+          - name: ppo_smoke
+            teacher_mem_path: _smoke/roban/main_subset
+            weight: 1.0
+  reward:
+    loco:
+      _scale_factor_: [0.0, 1.0, 0.5, 1.0]
+
+total_frames: 1024
+save_interval: -1
+checkpoint_path: null
+headless: true
+eval_render: false
+
+app:
+  headless: true
+  enable_cameras: false
+
+train_record:
+  enabled: false
+
+wandb:
+  mode: disabled
+
+smoke:
+  enabled: true
+  output_dir: ${oc.env:PPO_SMOKE_ROOT,./dataset/_audit/roban_ominisoma/ppo_smoke}/train
+
+hydra:
+  run:
+    dir: ${smoke.output_dir}
+  job:
+    chdir: true
+

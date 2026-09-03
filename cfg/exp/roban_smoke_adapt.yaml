@@ -1,0 +1,47 @@
+# @package _global_
+
+# Bounded Roban PPO smoke settings selecting the official Student adapt phase.
+defaults:
+  - override /algo: ppo_adapt
+
+algo:
+  train_every: 8
+  ppo_epochs: 1
+  num_minibatches: 1
+
+task:
+  num_envs: 64
+  student_train: true
+  profile:
+    command:
+      dataset:
+        groups:
+          - name: ppo_smoke
+            teacher_mem_path: _smoke/roban/main_subset
+            weight: 1.0
+
+total_frames: 1024
+save_interval: -1
+headless: true
+eval_render: false
+
+app:
+  headless: true
+  enable_cameras: false
+
+train_record:
+  enabled: false
+
+wandb:
+  mode: disabled
+
+smoke:
+  enabled: true
+  output_dir: ${oc.env:PPO_SMOKE_ROOT,./dataset/_audit/roban_ominisoma/ppo_smoke}/adapt
+
+hydra:
+  run:
+    dir: ${smoke.output_dir}
+  job:
+    chdir: true
+
