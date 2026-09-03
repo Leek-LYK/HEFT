@@ -13,7 +13,10 @@ from active_adaptation.assets import G1_CFG, G1_CFG_5, XBOT_L7_CFG, get_robot_cf
 from active_adaptation.assets.roban import ROBAN_CFG, ROBAN_JOINT_ORDER
 from active_adaptation.envs.locomotion import resolve_contact_body_pattern
 from active_adaptation.envs.mdp.randomizations.core import perturb_body_wrench
-from active_adaptation.envs.mdp.rewards.locomotion import feet_air_time_ref_dense
+from active_adaptation.envs.mdp.rewards.locomotion import (
+    _feet_sides,
+    feet_air_time_ref_dense,
+)
 
 
 CFG_DIR = Path(__file__).parents[1] / "cfg"
@@ -38,6 +41,12 @@ def _matches(pattern: str, names) -> list[str]:
 
 
 class RobanProfileTest(unittest.TestCase):
+    def test_roban_foot_names_resolve_left_and_right_sides(self):
+        self.assertEqual(
+            _feet_sides(["leg_l6_link", "leg_r6_link"], context="Roban feet"),
+            ["left", "right"],
+        )
+
     def test_registry_adds_roban_without_changing_existing_entries(self):
         self.assertIs(get_robot_cfg("roban"), ROBAN_CFG)
         self.assertIs(get_robot_cfg("g1"), G1_CFG)

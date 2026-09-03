@@ -1,4 +1,5 @@
 from math import inf
+import re
 import torch
 from typing import TYPE_CHECKING, List, Tuple
 
@@ -91,8 +92,16 @@ def _get_contact_majority_cache(env, contact_sensor):
 
 
 def _feet_sides(names: list[str], *, context: str) -> list[str]:
-    sides = ["left" if "left" in name.lower() else "right" if "right" in name.lower() else None for name in names]
-    if len(names) != 2 or sorted(sides) != ["left", "right"]:
+    def side(name: str) -> str | None:
+        normalized = name.lower()
+        if "left" in normalized or re.search(r"(?:^|_)l[0-9]*(?:_|$)", normalized):
+            return "left"
+        if "right" in normalized or re.search(r"(?:^|_)r[0-9]*(?:_|$)", normalized):
+            return "right"
+        return None
+
+    sides = [side(name) for name in names]
+    if len(names) != 2 or set(sides) != {"left", "right"}:
         raise ValueError(f"{context} expects exactly one left foot and one right foot, got {names}")
     return sides
 

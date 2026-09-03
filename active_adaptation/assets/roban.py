@@ -28,6 +28,17 @@ def _get_spec() -> mujoco.MjSpec:
     """Load the Roban MJCF for position control without changing its physics."""
     spec = load_spec_from_xml(ROBAN_XML)
 
+    # The Roban source uses deployment-facing IMU names. Expose the generic
+    # names consumed by HEFT observations while retaining the same sensor
+    # types, sites, and measurements.
+    sensor_name_map = {
+        "BodyGyro": "imu_ang_vel",
+        "BodyAcc": "imu_lin_acc",
+    }
+    for sensor in spec.sensors:
+        if sensor.name in sensor_name_map:
+            sensor.name = sensor_name_map[sensor.name]
+
     # The source MJCF motors document its actuator order and effort limits. The
     # training entity replaces them with the position actuators configured below.
     for actuator in list(spec.actuators):

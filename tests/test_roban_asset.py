@@ -157,6 +157,23 @@ class RobanAssetTest(unittest.TestCase):
                 training_model.actuator_forcerange[index], [-effort, effort]
             )
 
+    def test_training_spec_exposes_generic_imu_sensor_names(self):
+        raw = _raw_model()
+        self.assertNotEqual(raw.sensor("BodyGyro").id, -1)
+        self.assertNotEqual(raw.sensor("BodyAcc").id, -1)
+
+        training_model = ROBAN_CFG.spec_fn().compile()
+        self.assertNotEqual(training_model.sensor("imu_ang_vel").id, -1)
+        self.assertNotEqual(training_model.sensor("imu_lin_acc").id, -1)
+        self.assertEqual(
+            training_model.sensor("imu_ang_vel").type,
+            mujoco.mjtSensor.mjSENS_GYRO,
+        )
+        self.assertEqual(
+            training_model.sensor("imu_lin_acc").type,
+            mujoco.mjtSensor.mjSENS_ACCELEROMETER,
+        )
+
     def test_actuator_groups_cover_policy_joints_once_with_verified_pd(self):
         matches: dict[str, list] = {name: [] for name in ROBAN_JOINT_ORDER}
         for actuator in ROBAN_ARTICULATION.actuators:
