@@ -290,6 +290,16 @@ class feet_air_time_ref_dense(Reward):
         self.asset: Articulation = self.env.scene["robot"]
         self.contact_sensor: ContactSensor = self.env.scene["contact_forces"]
 
+        # Disabled rewards must not resolve optional bodies. This lets robots
+        # without an independent toe body opt out without inventing one.
+        if not self.enabled:
+            self.body_ids = torch.empty(0, device=self.env.device, dtype=torch.long)
+            self.articulation_body_ids = self.body_ids
+            self.articulation_body2_ids = self.body_ids
+            self.body_names = []
+            self.contact_cache = None
+            return
+
         articulation_body_ids, articulation_body_names = self.asset.find_bodies(body_names)
         _validate_feet_order(self.env, articulation_body_names, context="feet_air_time_ref_dense body_names")
         if body2_names is None:
@@ -321,15 +331,23 @@ class feet_air_time_ref_dense(Reward):
         self.contact_h_span = max(self.contact_h_high - self.contact_h_low, 1e-6)
 
     def reset(self, env_ids):
+        if not self.enabled:
+            return
         self.contact_cache.reset(env_ids)
 
     def post_step(self, substep: int):
+        if not self.enabled:
+            return
         self.contact_cache.post_step(substep)
 
     def update(self):
+        if not self.enabled:
+            return
         self.contact_cache.update()
 
     def compute(self):
+        if not self.enabled:
+            return torch.zeros((self.env.num_envs, 1), device=self.env.device)
         current_contact = self.contact_cache.current_for(self.body_ids)
         target_contact = self.env.command_manager.feet_standing
 

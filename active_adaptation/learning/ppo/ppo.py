@@ -21,6 +21,10 @@ from hydra.core.config_store import ConfigStore
 
 # ---- utils ------------------------------------------------------------------------------------ #
 from ..modules.distributions import IndependentNormal
+from ..modules.student_latent_quantizer import (
+    StudentLatentQuantizer,
+    StudentLatentQuantizerCfg,
+)
 from ..modules.valuenorm import ValueNorm1, ValueNormFake
 from .common import *
 from ..modules.opt import build_optimizer
@@ -48,6 +52,15 @@ def _schedule_value(schedule: Any, progress: float) -> float:
             return y0 + (y1 - y0) * (progress - x0) / (x1 - x0)
 
     return points[-1][1]
+
+
+def student_estimator_mse(
+    priv_pred: torch.Tensor,
+    priv_feature: torch.Tensor,
+    valid: torch.Tensor,
+) -> torch.Tensor:
+    """Compute Student alignment loss against the continuous teacher latent."""
+    return torch.mean(F.mse_loss(priv_pred, priv_feature, reduction="none") * valid)
 
 
 # ------------------------------------------------------------------------------------------------ #
@@ -94,6 +107,9 @@ class PPOConfig:
     load_noise_scale: float | None = None  # multiplier on std loaded from checkpoint
 
     latent_dim: int = 256
+    student_latent_quantizer: StudentLatentQuantizerCfg = field(
+        default_factory=StudentLatentQuantizerCfg
+    )
 
     # distillation
     reg_lambda: float = 0.2  # weight of priv-feature alignment
@@ -180,9 +196,34 @@ class PPOPolicy(TensorDictModuleBase):
             [OBS_KEY],
             ["priv_pred"],
         ).to(device)
+        quantizer_cfg = getattr(
+            self.cfg, "student_latent_quantizer", StudentLatentQuantizerCfg()
+        )
+        self.student_latent_quantizer_enabled = bool(
+            getattr(quantizer_cfg, "enabled", False)
+        )
+        quantizer_scale = getattr(
+            quantizer_cfg,
+            "scale",
+            StudentLatentQuantizerCfg().scale,
+        )
+        self.student_latent_quantizer = Mod(
+            StudentLatentQuantizer(
+                enabled=self.student_latent_quantizer_enabled,
+                scale=quantizer_scale,
+            ),
+            ["priv_pred"],
+            ["student_priv_feature"],
+        ).to(device)
         # ---------------------------------------------------------------------------- actor(s)
-        actor_in_keys_train = [OBS_KEY, "priv_feature"]
-        actor_in_keys_adapt = [OBS_KEY, "priv_pred"]
+        self.teacher_feature_key = "priv_feature"
+        self.student_feature_key = (
+            "student_priv_feature"
+            if self.student_latent_quantizer_enabled
+            else "priv_pred"
+        )
+        actor_in_keys_train = [OBS_KEY, self.teacher_feature_key]
+        actor_in_keys_adapt = [OBS_KEY, self.student_feature_key]
 
         def build_actor(in_keys):
             return ProbabilisticActor(
@@ -211,6 +252,8 @@ class PPOPolicy(TensorDictModuleBase):
             fake_td["is_init"] = torch.ones(fake_td.shape[0], 1, dtype=torch.bool)
         self.encoder_priv(fake_td)
         self.adapt_module(fake_td)
+        if self.student_latent_quantizer_enabled:
+            self.student_latent_quantizer(fake_td)
         self.actor_teacher(fake_td)
         self.actor_student(fake_td)
         self.critic(fake_td)
@@ -438,9 +481,13 @@ class PPOPolicy(TensorDictModuleBase):
             modules += [self.encoder_priv, self.actor_teacher]
         elif self.cfg.phase == "finetune":
             modules += [self.adapt_module]
+            if self.student_latent_quantizer_enabled:
+                modules += [self.student_latent_quantizer]
             modules += [self.actor_student]
         elif self.cfg.phase == "adapt":
             modules += [self.adapt_module]
+            if self.student_latent_quantizer_enabled:
+                modules += [self.student_latent_quantizer]
             modules += [self.actor_student]
 
         policy = Seq(*modules)
@@ -553,6 +600,8 @@ class PPOPolicy(TensorDictModuleBase):
             else:
                 with torch.no_grad():
                     encoder(mb)
+                    if self.student_latent_quantizer_enabled:
+                        self.student_latent_quantizer(mb)
 
         actor(mb)
 
@@ -574,8 +623,9 @@ class PPOPolicy(TensorDictModuleBase):
             if "priv_pred" not in mb.keys():
                 with torch.no_grad():
                     self.adapt_module(mb)
-            reg_loss = F.mse_loss(mb["priv_pred"], mb["priv_feature"], reduction="none")
-            reg_loss = self.reg_lambda * torch.mean(reg_loss * valid)
+            reg_loss = self.reg_lambda * student_estimator_mse(
+                mb["priv_pred"], mb["priv_feature"], valid
+            )
         else:
             reg_loss = 0.0
 
@@ -669,7 +719,9 @@ class PPOPolicy(TensorDictModuleBase):
                     self.encoder_priv(mb)
                 self.adapt_module(mb)
 
-                loss = torch.mean(F.mse_loss(mb["priv_pred"], mb["priv_feature"], reduction="none") * (valid))
+                loss = student_estimator_mse(
+                    mb["priv_pred"], mb["priv_feature"], valid
+                )
 
                 self.opt_estimator.zero_grad()
                 loss.backward()

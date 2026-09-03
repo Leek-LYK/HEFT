@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import math
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 import mujoco
 import numpy as np
@@ -15,15 +16,32 @@ from active_adaptation.utils.math import quat_to_rot6d
 from active_adaptation.utils.symmetry import SymmetryTransform, cartesian_space_symmetry
 
 
+NameSwapRules = Sequence[tuple[str, str]]
+DEFAULT_NAME_SWAP_RULES: tuple[tuple[str, str], ...] = (("left_", "right_"),)
+
+
 def load_spec_from_xml(xml_path: Path) -> mujoco.MjSpec:
     return mujoco.MjSpec.from_file(str(xml_path))
 
 
-def swap_left_right(name: str) -> str:
-    if name.startswith("left_"):
-        return "right_" + name[len("left_") :]
-    if name.startswith("right_"):
-        return "left_" + name[len("right_") :]
+def swap_left_right(
+    name: str,
+    name_swap_rules: NameSwapRules = DEFAULT_NAME_SWAP_RULES,
+) -> str:
+    """Swap a name using ordered, bidirectional prefix pairs."""
+    matches: list[tuple[str, str]] = []
+    for left, right in name_swap_rules:
+        if not left or not right or left == right:
+            raise ValueError(f"Invalid symmetry name swap rule: {(left, right)!r}")
+        if name.startswith(left):
+            matches.append((left, right))
+        elif name.startswith(right):
+            matches.append((right, left))
+    if len(matches) > 1:
+        raise ValueError(f"Ambiguous symmetry name swap for {name!r}: {matches!r}")
+    if matches:
+        source, target = matches[0]
+        return target + name[len(source) :]
     return name
 
 
@@ -41,7 +59,11 @@ def base_joint_sign(joint_name: str, axis: Sequence[float]) -> int:
     return dominant_axis_sign(axis)
 
 
-def parse_xml_symmetry_info(xml_path: Path) -> tuple[dict[str, tuple[float, float, float]], tuple[str, ...], tuple[str, ...]]:
+def parse_xml_symmetry_info(
+    xml_path: Path,
+) -> tuple[
+    dict[str, tuple[float, float, float]], tuple[str, ...], tuple[str, ...]
+]:
     root = ET.parse(xml_path).getroot()
     joint_axes: dict[str, tuple[float, float, float]] = {}
     joint_order: list[str] = []
@@ -52,7 +74,7 @@ def parse_xml_symmetry_info(xml_path: Path) -> tuple[dict[str, tuple[float, floa
             body_names.append(body_name)
         for joint in body.findall("joint"):
             joint_name = joint.get("name")
-            if joint_name is None:
+            if joint_name is None or joint.get("type", "hinge") == "free":
                 continue
             axis = tuple(float(v) for v in joint.get("axis", "0 0 0").split())
             joint_axes[joint_name] = axis
@@ -60,31 +82,70 @@ def parse_xml_symmetry_info(xml_path: Path) -> tuple[dict[str, tuple[float, floa
     return joint_axes, tuple(joint_order), tuple(body_names)
 
 
-def build_auto_joint_symmetry_map(joint_axes: dict[str, tuple[float, float, float]]) -> dict[str, tuple[int, str]]:
+def build_auto_joint_symmetry_map(
+    joint_axes: dict[str, tuple[float, float, float]],
+    name_swap_rules: NameSwapRules = DEFAULT_NAME_SWAP_RULES,
+) -> dict[str, tuple[int, str]]:
+    """Build joint swaps and signs from names and mirrored joint axes."""
     all_joint_names = set(joint_axes)
     mapping: dict[str, tuple[int, str]] = {}
     for joint_name, axis in joint_axes.items():
-        mirrored_name = swap_left_right(joint_name)
+        mirrored_name = swap_left_right(joint_name, name_swap_rules)
         if mirrored_name not in all_joint_names:
             mirrored_name = joint_name
-        sign = base_joint_sign(joint_name, axis)
-        if mirrored_name != joint_name:
-            mirrored_axis = joint_axes[mirrored_name]
-            if sum(a * b for a, b in zip(axis, mirrored_axis)) < 0.0:
-                sign = -sign
+        # Joint axes are axial vectors. Reflection across the sagittal plane
+        # therefore transforms (x, y, z) to (-x, y, -z).
+        reflected_axis = (-axis[0], axis[1], -axis[2])
+        mirrored_axis = joint_axes[mirrored_name]
+        axis_alignment = sum(a * b for a, b in zip(reflected_axis, mirrored_axis))
+        if abs(axis_alignment) < 1.0e-8:
+            raise ValueError(
+                f"Cannot determine symmetry sign for joint {joint_name!r} "
+                f"and mirror {mirrored_name!r}: axes={axis!r}, {mirrored_axis!r}"
+            )
+        sign = 1 if axis_alignment > 0.0 else -1
         mapping[joint_name] = (sign, mirrored_name)
     return mapping
 
 
-def build_auto_spatial_symmetry_map(body_names: Sequence[str]) -> dict[str, str]:
+def build_auto_spatial_symmetry_map(
+    body_names: Sequence[str],
+    name_swap_rules: NameSwapRules = DEFAULT_NAME_SWAP_RULES,
+) -> dict[str, str]:
+    """Build a body-name symmetry map with unmatched bodies kept centered."""
     all_body_names = set(body_names)
     mapping: dict[str, str] = {}
     for body_name in body_names:
-        mirrored_name = swap_left_right(body_name)
+        mirrored_name = swap_left_right(body_name, name_swap_rules)
         if mirrored_name not in all_body_names:
             mirrored_name = body_name
         mapping[body_name] = mirrored_name
     return mapping
+
+
+def _validate_name_swap_involution(
+    names: Sequence[str], name_swap_rules: NameSwapRules
+) -> None:
+    for name in names:
+        swapped = swap_left_right(name, name_swap_rules)
+        if swap_left_right(swapped, name_swap_rules) != name:
+            raise ValueError(f"Symmetry name swap is not an involution for {name!r}")
+
+
+def _select_validation_bodies(
+    body_names: Sequence[str], validation_body_patterns: Sequence[str] | None
+) -> tuple[str, ...]:
+    if validation_body_patterns is None:
+        return tuple(body_names)
+    selected: list[str] = []
+    for pattern in validation_body_patterns:
+        matched = [name for name in body_names if re.fullmatch(pattern, name)]
+        if not matched:
+            raise ValueError(f"Symmetry validation body pattern matched nothing: {pattern!r}")
+        for name in matched:
+            if name not in selected:
+                selected.append(name)
+    return tuple(selected)
 
 
 def _build_fk_helper(
@@ -206,27 +267,50 @@ def _validate_fk_pose_symmetry(
 def generate_auto_symmetry(
     *,
     xml_path: Path,
-    spec_fn,
+    spec_fn: Callable[[], mujoco.MjSpec],
     body_pos_tol: float,
     body_quat_tol: float,
     fk_body_pos_tol: float,
     fk_body_quat_tol: float,
+    name_swap_rules: NameSwapRules = DEFAULT_NAME_SWAP_RULES,
+    validation_body_patterns: Sequence[str] | None = None,
 ) -> tuple[dict[str, tuple[int, str]], dict[str, str]]:
+    """Generate and physically validate joint/body sagittal symmetry maps."""
     joint_axes, joint_order, body_names = parse_xml_symmetry_info(xml_path)
-    joint_map = build_auto_joint_symmetry_map(joint_axes)
-    spatial_map = build_auto_spatial_symmetry_map(body_names)
+    _validate_name_swap_involution((*joint_order, *body_names), name_swap_rules)
+    joint_map = build_auto_joint_symmetry_map(joint_axes, name_swap_rules)
+    spatial_map = build_auto_spatial_symmetry_map(body_names, name_swap_rules)
+
+    validation_body_names = _select_validation_bodies(
+        body_names, validation_body_patterns
+    )
+    validation_body_set = set(validation_body_names)
+    validation_spatial_map = {
+        name: mirrored_name
+        for name, mirrored_name in spatial_map.items()
+        if name in validation_body_set and mirrored_name in validation_body_set
+    }
+    if len(validation_spatial_map) != len(validation_body_names):
+        missing = validation_body_set.difference(validation_spatial_map)
+        raise ValueError(f"Symmetry validation set is missing mirrored bodies: {missing}")
 
     spec = spec_fn()
     model = spec.compile()
-    helper = _build_fk_helper(model=model, dataset_joint_names=joint_order, output_body_names=body_names)
-    body_pos_err, body_quat_err = _validate_spatial_structure(model, spatial_map)
+    helper = _build_fk_helper(
+        model=model,
+        dataset_joint_names=joint_order,
+        output_body_names=validation_body_names,
+    )
+    body_pos_err, body_quat_err = _validate_spatial_structure(
+        model, validation_spatial_map
+    )
     fk_body_pos_err, fk_body_quat_err = _validate_fk_pose_symmetry(
         model=model,
         helper=helper,
         joint_names=joint_order,
-        body_names=body_names,
+        body_names=validation_body_names,
         joint_map=joint_map,
-        spatial_map=spatial_map,
+        spatial_map=validation_spatial_map,
     )
     report = (
         f"[auto_symmetry] {xml_path.name}: "

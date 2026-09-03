@@ -19,7 +19,7 @@ class JointPosition(ActionManager):
         delay_full_progress: float = 1.0,
         boot_delay_steps: int = 0,
         alpha: Tuple[float, float] = (0.9, 0.9),
-        prev_action_obs: Literal["sampled", "mean"] = "sampled",
+        prev_action_obs: Literal["sampled", "mean", "applied"] = "sampled",
         action_rate_source: Literal["sampled", "mean"] = "sampled",
         torque_limit_scale_range: Tuple[float, float] = (1.0, 1.0),
         torque_limit_progress_range: Tuple[float, float] = (0.0, 1.0),
@@ -45,9 +45,10 @@ class JointPosition(ActionManager):
             )
         self.boot_delay_steps = int(max(boot_delay_steps, 0))
         self.prev_action_obs = str(prev_action_obs)
-        if self.prev_action_obs not in {"sampled", "mean"}:
+        if self.prev_action_obs not in {"sampled", "mean", "applied"}:
             raise ValueError(
-                f"prev_action_obs must be 'sampled' or 'mean', got {self.prev_action_obs!r}."
+                "prev_action_obs must be 'sampled', 'mean', or 'applied', "
+                f"got {self.prev_action_obs!r}."
             )
         self.action_rate_source = str(action_rate_source)
         if self.action_rate_source not in {"sampled", "mean"}:
@@ -83,6 +84,13 @@ class JointPosition(ActionManager):
                 dtype=torch.float32,
             )
             self._action_mean_buf = TensorRingBuffer(
+                self.num_envs,
+                hist,
+                self.action_dim,
+                device=self.device,
+                dtype=torch.float32,
+            )
+            self._action_applied_buf = TensorRingBuffer(
                 self.num_envs,
                 hist,
                 self.action_dim,
@@ -187,6 +195,7 @@ class JointPosition(ActionManager):
     def reset(self, env_ids: torch.Tensor):
         self._action_buf.reset(env_ids)
         self._action_mean_buf.reset(env_ids)
+        self._action_applied_buf.reset(env_ids)
         self.applied_action[env_ids] = 0
 
         # Delay selection ---------------------------------------------------
@@ -228,6 +237,12 @@ class JointPosition(ActionManager):
         pos_tgt = self.default_joint_pos + self.offset
         pos_tgt[:, self.joint_ids] += self.applied_action * self.action_scaling
 
+        # Record once per policy step, after the final physics-substep filter
+        # update. The next observation then sees the actions actually applied
+        # to the preceding simulated step.
+        if substep == self.env.decimation - 1:
+            self._action_applied_buf.push(self.applied_action)
+
         # Optional boot‑protection -----------------------------------------
         if self.boot_protect_enabled:
             pos_tgt = torch.where(
@@ -248,6 +263,8 @@ class JointPosition(ActionManager):
             return self._action_mean_buf.recent(steps)
         if source == "sampled":
             return self._action_buf.recent(steps)
+        if source == "applied":
+            return self._action_applied_buf.recent(steps)
         raise ValueError(f"Unknown action history source: {source!r}.")
 
     def get_recent_action_obs(self, steps: int) -> torch.Tensor:

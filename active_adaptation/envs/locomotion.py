@@ -1,7 +1,37 @@
+from typing import Any
+
 import torch
 
 import active_adaptation
 from active_adaptation.envs.base import _Env
+
+
+def _config_value(cfg: Any, key: str) -> Any:
+    if cfg is None:
+        return None
+    getter = getattr(cfg, "get", None)
+    if callable(getter):
+        return getter(key, None)
+    return getattr(cfg, key, None)
+
+
+def resolve_contact_body_pattern(cfg: Any) -> str:
+    """Resolve the robot contact-body regex from task configuration."""
+    robot_cfg = _config_value(cfg, "robot")
+    pattern = _config_value(robot_cfg, "contact_body_pattern")
+    if pattern is None:
+        # Backward-compatible path for saved task configs predating the
+        # robot.contact_body_pattern forwarding field.
+        command_cfg = _config_value(cfg, "command")
+        feet_patterns = _config_value(command_cfg, "feet_patterns")
+        if feet_patterns is not None and len(feet_patterns) == 1:
+            pattern = feet_patterns[0]
+    if not isinstance(pattern, str) or not pattern:
+        raise ValueError(
+            "Contact body pattern requires robot.contact_body_pattern or exactly "
+            "one command.feet_patterns entry"
+        )
+    return pattern
 
 
 class SimpleEnv(_Env):
@@ -73,7 +103,7 @@ class SimpleEnv(_Env):
             name="contact_forces",
             primary=ContactMatch(
                 mode="subtree",
-                pattern=r"^(left_ankle_roll_link|right_ankle_roll_link)$",
+                pattern=resolve_contact_body_pattern(self.cfg),
                 entity="robot",
             ),
             secondary=ContactMatch(mode="body", pattern="terrain"),

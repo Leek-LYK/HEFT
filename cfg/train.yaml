@@ -19,6 +19,14 @@ seed: 0
 checkpoint_path: null
 vecnorm: ${oc.select:algo.vecnorm,train}
 
+# Robot profiles may opt into a deployment-specific Student latent contract.
+# The fallbacks preserve the official PPO defaults for G1/L7 and old configs.
+algo:
+  latent_dim: ${oc.select:task.profile.policy.latent_dim,256}
+  student_latent_quantizer:
+    enabled: ${oc.select:task.profile.policy.student_latent_quantizer.enabled,false}
+    scale: ${oc.select:task.profile.policy.student_latent_quantizer.scale,4.499549865722656}
+
 camera_follow: false
 
 train_record:

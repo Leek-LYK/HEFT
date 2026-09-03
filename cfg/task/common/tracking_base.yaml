@@ -4,12 +4,13 @@ name: ${task.profile.tracking_name}
 robot:
   name: ${task.profile.name}
   mass: ${task.profile.mass}
+  contact_body_pattern: ${task.profile.body.feet_pattern}
 
 action:
   _target_: active_adaptation.envs.mdp.action.JointPosition
   action_scaling: ${task.profile.action.action_scaling}
   alpha: [0.8, 1.0]
-  prev_action_obs: mean
+  prev_action_obs: ${oc.select:task.profile.action.prev_action_obs,mean}
   action_rate_source: sampled
   max_delay: ${task.profile.action.max_delay}
   delay_full_progress: 0.8
@@ -155,9 +156,9 @@ reward:
       thres: 0.5
     feet_air_time_ref_dense:
       weight: 1.0
-      enabled: true
+      enabled: ${oc.select:task.profile.reward.feet_air_time_ref_dense.enabled,true}
       body_names: ${task.profile.body.feet_pattern}
-      body2_names: ${task.profile.body.feet_toe_pattern}
+      body2_names: ${oc.select:task.profile.body.feet_toe_pattern,__no_feet_toe_body__}
       air_h_low: ${task.profile.reward.feet_air_time_ref_dense.air_h_low}
       air_h_high: ${task.profile.reward.feet_air_time_ref_dense.air_h_high}
       contact_h_low: ${task.profile.reward.feet_air_time_ref_dense.contact_h_low}

@@ -1,0 +1,170 @@
+tracking_name: ROBANTRACKING
+name: roban
+mass: 40.69991336
+
+body:
+  base_pattern: ^base_link$
+  # Used for COM and wrench randomization. It must differ from base_pattern;
+  # duplicate patterns are rejected by the resolver.
+  torso_pattern: ^waist_yaw_link$
+  head_pattern: ^zhead_2_link$
+  hand_pattern: ^(l_handball|r_handball)$
+  feet_pattern: ^(leg_l6_link|leg_r6_link)$
+  # Roban has no independent toe body; intentionally no feet_toe_pattern.
+
+action:
+  action_scaling:
+    ^waist_yaw_joint$: 0.5
+    ^leg_[lr][1-6]_joint$: 0.5
+    ^zarm_[lr][1-4]_joint$: 1.0
+  # Leju HEFT feeds the EMA-filtered command back into the 8-frame history.
+  prev_action_obs: applied
+  # First-version provisional training delay/curriculum values.
+  max_delay: 2
+  torque_limit_scale_range: [4.0, 1.0]
+  torque_limit_progress_range: [0.0, 0.8]
+  boot_delay_steps: 2
+
+# Verified deployment values. Training keeps the common alpha DR [0.8, 1.0].
+deployment:
+  residual_action: false
+  action_clip: 10.0
+  action_alpha: 0.9
+  default_joint_position: 0.0
+
+policy:
+  latent_dim: 40
+  student_latent_quantizer:
+    enabled: true
+    scale: 4.499549865722656
+
+command:
+  required_motion_body_patterns:
+    - ^base_link$
+    - ^waist_yaw_link$
+    - ^zhead_2_link$
+    - ^(l_handball|r_handball)$
+    - ^(zarm_l3_link|zarm_r3_link)$
+    - ^(zarm_l4_link|zarm_r4_link)$
+    - ^(leg_l1_link|leg_r1_link)$
+    - ^(leg_l4_link|leg_r4_link)$
+    - ^(leg_l6_link|leg_r6_link)$
+  keypoint_patterns:
+    - ^zhead_2_link$
+    - ^(l_handball|r_handball)$
+    - ^(zarm_l3_link|zarm_r3_link)$
+    - ^(zarm_l4_link|zarm_r4_link)$
+    - ^(leg_l1_link|leg_r1_link)$
+    - ^(leg_l4_link|leg_r4_link)$
+    - ^(leg_l6_link|leg_r6_link)$
+  # First-version provisional thresholds borrowed from the G1 profile.
+  feet_standing:
+    z_enter: 0.18
+    z_exit: 0.25
+    vxy_enter: 0.2
+    vxy_exit: 0.3
+    vz_enter: 0.15
+    vz_exit: 0.25
+  # Data stage is not implemented. This future path is intentionally absent.
+  dataset:
+    skip_initial_frames: 5
+    groups:
+      - name: seed
+        teacher_mem_path: roban/seed/all
+        weight: 1.0
+    offset_pos_z: 0.0
+    cache_request_range: [-20, 24]
+    cache_fill_range: [-20, 100]
+  student_future_steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, -1, -2, -4, -8]
+  # First-version provisional DR values borrowed conservatively from G1/L7.
+  reinit_prob: 0.5
+  student_motion_randomization:
+    enable: true
+    root_pos_noise_std: 0.005
+    root_ori_noise_std: 0.02
+    joint_pos_noise_std: 0.01
+    joint_pos_bias_std:
+      ^(waist_yaw_joint|zarm_[lr][1-4]_joint)$: 0.0
+      ^leg_[lr][1-6]_joint$: 0.1
+    root_pos_drift:
+      root_z_offset_range_m: [-0.05, 0.05]
+      xy_speed_range: [0.0, 0.2]
+      xy_freq_range_hz: [0.25, 1.0]
+      z_amplitude_range_m: [0.0, 0.025]
+      z_freq_range_hz: [0.25, 1.0]
+    root_rot_drift:
+      amplitude_range_rad: [0.0, 0.1]
+      freq_range_hz: [0.25, 1.0]
+  shared_joint_pos:
+    std:
+      ^(waist_yaw_joint|leg_[lr][1-6]_joint|zarm_[lr][1-4]_joint)$: 0.02
+    bias:
+      ^(waist_yaw_joint|leg_[lr][1-6]_joint|zarm_[lr][1-4]_joint)$: 0.0
+  shared_joint_vel:
+    std:
+      ^(waist_yaw_joint|leg_[lr][1-6]_joint|zarm_[lr][1-4]_joint)$: 0.75
+
+# First-version provisional observation noise borrowed from L7.
+observation:
+  policy:
+    noise:
+      command_obs: 0.1
+      root_angvel_history: 0.2
+      projected_gravity_history: 0.01
+      projected_gravity_history_bias: 0.03
+      joint_pos_history: 0.02
+      joint_vel_history: 0.75
+
+# First-version provisional randomization ranges, not Leju-validated values.
+randomization:
+  motor_params_implicit:
+    mode: uniform
+    stiffness_range:
+      ^waist_yaw_joint$: [0.95, 1.05]
+      ^leg_[lr][1-6]_joint$: [0.95, 1.05]
+      ^zarm_[lr][1-4]_joint$: [0.95, 1.05]
+    damping_range:
+      ^waist_yaw_joint$: [0.95, 1.05]
+      ^leg_[lr][1-6]_joint$: [0.95, 1.05]
+      ^zarm_[lr][1-4]_joint$: [0.95, 1.05]
+    armature_range:
+      ^waist_yaw_joint$: [0.95, 1.05]
+      ^leg_[lr][1-6]_joint$: [0.95, 1.05]
+      ^zarm_[lr][1-4]_joint$: [0.95, 1.05]
+  random_joint_offset:
+    ^(waist_yaw_joint|leg_[lr][1-6]_joint|zarm_[lr][1-4]_joint)$: [-0.02, 0.02]
+  perturb_root_vel:
+    min_s: 4.0
+    max_s: 6.0
+    x: [-0.5, 0.5]
+    y: [-0.5, 0.5]
+    z: [-0.2, 0.2]
+    roll: [-0.52, 0.52]
+    pitch: [-0.52, 0.52]
+    yaw: [-0.78, 0.78]
+  perturb_body_wrench:
+    body_name: ${task.profile.body.torso_pattern}
+    total_duration_range_s: [3.0, 6.0]
+    active_duration_range_s: [1.0, 4.0]
+    force_magnitude_range_n: [0.0, 10.0]
+    lever_arm_length_range_m: [0.0, 0.4]
+  window_cap_hand_load:
+    enabled: false
+  perturb_body_materials:
+    body_names: ${task.profile.body.feet_pattern}
+    static_friction_range: [0.5, 1.2]
+    solref_time_constant_range: [0.015, 0.03]
+    solref_dampratio_range: [0.8, 1.2]
+
+reward:
+  feet_air_time_ref_dense:
+    enabled: false
+    # Unused while disabled; retained for schema compatibility.
+    air_h_low: 0.035
+    air_h_high: 0.155
+    contact_h_low: 0.035
+    contact_h_high: 0.125
+
+# First-version provisional termination limits borrowed from G1.
+termination:
+  body_z_terminate_thres: [-0.25, 0.35]

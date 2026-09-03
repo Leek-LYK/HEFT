@@ -466,11 +466,17 @@ class perturb_body_wrench(Randomization):
             self.body_ids = torch.empty(0, device=self.device, dtype=torch.long)
             return
 
-        body_matches = [i for i, name in enumerate(self.asset.body_names) if name == self.body_name]
+        try:
+            body_matches, matched_names = self.asset.find_bodies(self.body_name)
+        except ValueError as exc:
+            raise ValueError(
+                f"perturb_body_wrench.body_name must match exactly one body, got "
+                f"{self.body_name!r}."
+            ) from exc
         if len(body_matches) != 1:
             raise ValueError(
                 f"perturb_body_wrench.body_name must match exactly one body, got {self.body_name!r} "
-                f"with matches={body_matches}."
+                f"with matches={matched_names}."
             )
         self.body_id = int(body_matches[0])
         self.body_ids = torch.tensor([self.body_id], device=self.device, dtype=torch.long)
