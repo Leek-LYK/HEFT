@@ -32,7 +32,9 @@ class MotionData(TensorClass):
     body_angvel_b: torch.Tensor
 
 
-FOOT_NAMES = ["left_ankle_roll_link", "right_ankle_roll_link"]
+DEFAULT_FOOT_NAMES = ("left_ankle_roll_link", "right_ankle_roll_link")
+# Backward-compatible alias for callers that imported the old public constant.
+FOOT_NAMES = list(DEFAULT_FOOT_NAMES)
 END_EFFECTOR_BODY_NAME_CANDIDATES = {
     "left_foot": ("left_ankle_roll_link",),
     "right_foot": ("right_ankle_roll_link",),
@@ -41,6 +43,26 @@ END_EFFECTOR_BODY_NAME_CANDIDATES = {
 }
 PAIRED_ENDPOINT_Z_DIFF_LIMIT_M = 0.2
 PAIRED_ENDPOINT_Z_DIFF_CONTEXT_FRAMES = 25
+
+
+def resolve_foot_indices(
+    body_names: Sequence[str],
+    foot_names: Sequence[str] = DEFAULT_FOOT_NAMES,
+) -> list[int]:
+    """Validate configured foot names and resolve their body indices."""
+    configured = tuple(str(name) for name in foot_names)
+    if len(configured) != 2:
+        raise ValueError(f"foot_names must contain exactly two names, got {list(configured)}")
+    if len(set(configured)) != len(configured):
+        raise ValueError(f"foot_names must be unique, got {list(configured)}")
+    body_name_list = list(body_names)
+    missing = [name for name in configured if name not in body_name_list]
+    if missing:
+        raise ValueError(
+            f"foot_names are missing from the motion body schema: missing={missing}, "
+            f"body_names={body_name_list}"
+        )
+    return [body_name_list.index(name) for name in configured]
 
 
 def _normalize_motion_filter_result(result, length: int) -> tuple[bool, list[dict]]:
@@ -231,56 +253,114 @@ def _prepare_motion_arrays(
     path: Path,
     joint_names: list[str] | None,
     body_names: list[str] | None,
+    dataset_body_names: list[str] | None,
     foot_idx: list[int] | None,
     target_fps: int,
+    foot_names: Sequence[str] = DEFAULT_FOOT_NAMES,
     allow_body_subset: bool = False,
-) -> tuple[dict, list[str], list[str], list[int]]:
-    with np.load(path, allow_pickle=True) as data:
-        if joint_names is None:
-            joint_names = list(data["joint_names"].tolist())
-            body_names = list(data["body_names"].tolist())
-            foot_idx = [body_names.index(name) for name in FOOT_NAMES]
-            body_indices = list(range(len(body_names)))
-        else:
+    motion_adapter: Callable[[Path], dict] | None = None,
+) -> tuple[dict, list[str], list[str], list[str], list[int]]:
+    if motion_adapter is None:
+        with np.load(path, allow_pickle=True) as data:
             current_joint_names = list(data["joint_names"].tolist())
             current_body_names = list(data["body_names"].tolist())
-            if current_joint_names != joint_names:
-                raise ValueError(f"joint_names mismatch in {path}")
-            if current_body_names == body_names:
-                body_indices = list(range(len(body_names)))
-            elif allow_body_subset:
-                current_body_index = {name: idx for idx, name in enumerate(current_body_names)}
-                missing = [name for name in body_names if name not in current_body_index]
-                if missing:
-                    raise ValueError(f"body_names subset missing in {path}: {missing}")
-                body_indices = [current_body_index[name] for name in body_names]
-            else:
-                raise ValueError(f"body_names mismatch in {path}")
+            fps_value = data.get("mocap_framerate", data.get("frequency", data.get("fps", 0)))
+            fps_array = np.asarray(fps_value)
+            if fps_array.size != 1:
+                raise ValueError(f"Expected scalar fps in {path}, got shape {fps_array.shape}")
+            fps = int(fps_array.reshape(-1)[0])
+            root_pos = np.asarray(data["root_pos"], dtype=np.float32)
+            root_quat_xyzw = np.asarray(data["root_rot"], dtype=np.float32)
+            raw_joint_pos = np.asarray(data["dof_pos"], dtype=np.float32)
+            raw_local_body_pos = np.asarray(data["local_body_pos"], dtype=np.float32)
+        adapted_motion = None
+        current_dataset_body_names = current_body_names
+    else:
+        adapted_motion = dict(motion_adapter(path))
+        required_fields = ("fps", "qpos", "xpos", "joint_names", "body_names")
+        missing_fields = [field for field in required_fields if field not in adapted_motion]
+        if missing_fields:
+            raise ValueError(f"motion adapter for {path} omitted fields {missing_fields}")
+        current_joint_names = list(adapted_motion["joint_names"])
+        current_body_names = list(adapted_motion["body_names"])
+        current_dataset_body_names = list(
+            adapted_motion.get("dataset_body_names", current_body_names)
+        )
+        fps = int(adapted_motion["fps"])
 
-        fps = int(data.get("mocap_framerate", data.get("frequency", data.get("fps", 0))))
-        if fps != target_fps:
-            raise ValueError(f"Expected fps={target_fps}, got {fps} for {path}")
+    if motion_adapter is None and allow_body_subset and body_names is not None:
+        # The persisted schema is the precomputed common subset, not each
+        # source file's potentially wider body list.
+        current_dataset_body_names = list(body_names)
 
-        root_pos = np.asarray(data["root_pos"], dtype=np.float32)
-        root_quat_xyzw = np.asarray(data["root_rot"], dtype=np.float32)
-        joint_pos = np.asarray(data["dof_pos"][:, : len(joint_names)], dtype=np.float32)
-        local_body_pos = np.asarray(data["local_body_pos"][:, body_indices], dtype=np.float32)
+    if fps != target_fps:
+        raise ValueError(f"Expected fps={target_fps}, got {fps} for {path}")
 
-    root_rot = sRot.from_quat(root_quat_xyzw)
-    root_rot_m = root_rot.as_matrix().astype(np.float32)
-    body_pos_w = np.einsum("tij,tbj->tbi", root_rot_m, local_body_pos) + root_pos[:, None, :]
+    if joint_names is None:
+        joint_names = current_joint_names
+        body_names = current_body_names
+        dataset_body_names = current_dataset_body_names
+        foot_idx = resolve_foot_indices(body_names, foot_names)
+        body_indices = list(range(len(body_names)))
+    else:
+        if current_joint_names != joint_names:
+            raise ValueError(f"joint_names mismatch in {path}")
+        if current_dataset_body_names != dataset_body_names:
+            raise ValueError(f"dataset_body_names mismatch in {path}")
+        if current_body_names == body_names:
+            body_indices = list(range(len(body_names)))
+        elif allow_body_subset:
+            current_body_index = {name: idx for idx, name in enumerate(current_body_names)}
+            missing = [name for name in body_names if name not in current_body_index]
+            if missing:
+                raise ValueError(f"body_names subset missing in {path}: {missing}")
+            body_indices = [current_body_index[name] for name in body_names]
+        else:
+            raise ValueError(f"body_names mismatch in {path}")
 
-    root_quat_wxyz = np.concatenate([root_quat_xyzw[..., 3:4], root_quat_xyzw[..., :3]], axis=-1).astype(np.float32)
-    qpos = np.concatenate([root_pos, root_quat_wxyz, joint_pos], axis=-1).astype(np.float32)
-
-    motion = {
-        "fps": fps,
-        "qpos": qpos,
-        "xpos": body_pos_w.astype(np.float32),
-        "joint_names": joint_names,
-        "body_names": body_names,
-    }
-    return motion, joint_names, body_names, foot_idx
+    if adapted_motion is not None:
+        qpos = np.asarray(adapted_motion["qpos"], dtype=np.float32)
+        body_pos_w = np.asarray(adapted_motion["xpos"], dtype=np.float32)[:, body_indices]
+        if qpos.ndim != 2 or qpos.shape[1] != 7 + len(joint_names):
+            raise ValueError(
+                f"motion adapter qpos shape mismatch in {path}: "
+                f"{qpos.shape} != [T,{7 + len(joint_names)}]"
+            )
+        if body_pos_w.shape != (qpos.shape[0], len(body_names), 3):
+            raise ValueError(
+                f"motion adapter xpos shape mismatch in {path}: "
+                f"{body_pos_w.shape} != {(qpos.shape[0], len(body_names), 3)}"
+            )
+        motion = adapted_motion
+        motion.update(
+            {
+                "fps": fps,
+                "qpos": qpos,
+                "xpos": body_pos_w,
+                "joint_names": joint_names,
+                "body_names": body_names,
+                "dataset_body_names": dataset_body_names,
+            }
+        )
+    else:
+        joint_pos = raw_joint_pos[:, : len(joint_names)]
+        local_body_pos = raw_local_body_pos[:, body_indices]
+        root_rot = sRot.from_quat(root_quat_xyzw)
+        root_rot_m = root_rot.as_matrix().astype(np.float32)
+        body_pos_w = np.einsum("tij,tbj->tbi", root_rot_m, local_body_pos) + root_pos[:, None, :]
+        root_quat_wxyz = np.concatenate(
+            [root_quat_xyzw[..., 3:4], root_quat_xyzw[..., :3]], axis=-1
+        ).astype(np.float32)
+        qpos = np.concatenate([root_pos, root_quat_wxyz, joint_pos], axis=-1).astype(np.float32)
+        motion = {
+            "fps": fps,
+            "qpos": qpos,
+            "xpos": body_pos_w.astype(np.float32),
+            "joint_names": joint_names,
+            "body_names": body_names,
+            "dataset_body_names": dataset_body_names,
+        }
+    return motion, joint_names, body_names, dataset_body_names, foot_idx
 
 
 def _read_motion_schema(path: Path) -> tuple[list[str], list[str]]:
@@ -288,7 +368,12 @@ def _read_motion_schema(path: Path) -> tuple[list[str], list[str]]:
         return list(data["joint_names"].tolist()), list(data["body_names"].tolist())
 
 
-def _resolve_body_subset_schema(paths, *, paired: bool) -> tuple[list[str], list[str], list[int]]:
+def _resolve_body_subset_schema(
+    paths,
+    *,
+    paired: bool,
+    foot_names: Sequence[str] = DEFAULT_FOOT_NAMES,
+) -> tuple[list[str], list[str], list[int]]:
     joint_names: list[str] | None = None
     ordered_body_names: list[str] | None = None
     common_body_names: set[str] | None = None
@@ -310,10 +395,7 @@ def _resolve_body_subset_schema(paths, *, paired: bool) -> tuple[list[str], list
         raise RuntimeError("No motion schemas found")
 
     body_names = [name for name in ordered_body_names if name in common_body_names]
-    missing_feet = [name for name in FOOT_NAMES if name not in body_names]
-    if missing_feet:
-        raise ValueError(f"Common body subset is missing required foot links: {missing_feet}")
-    foot_idx = [body_names.index(name) for name in FOOT_NAMES]
+    foot_idx = resolve_foot_indices(body_names, foot_names)
     return joint_names, body_names, foot_idx
 
 
@@ -391,6 +473,9 @@ def create_motion_dataset_from_path(
     bad_interval_padding: int = 10,
     min_segment_frames: int = 150,
     max_segments_per_motion: int | None = None,
+    foot_names: Sequence[str] = DEFAULT_FOOT_NAMES,
+    motion_adapter: Callable[[Path], dict] | None = None,
+    motion_paths: Sequence[str | Path] | None = None,
 ):
     del storage_int_dtype  # kept for call-site compatibility
     bad_interval_padding = max(0, int(bad_interval_padding))
@@ -402,9 +487,24 @@ def create_motion_dataset_from_path(
     paired = student_root_path is not None
     if not paired and student_mem_path is not None:
         raise ValueError("student_mem_path requires student_root_path")
-    paths = _resolve_paired_motion_paths(root_path, student_root_path) if paired else _resolve_motion_paths(root_path)
+    if motion_paths is not None and paired:
+        raise ValueError("motion_paths cannot be combined with paired student_root_path")
+    if motion_paths is None:
+        paths = _resolve_paired_motion_paths(root_path, student_root_path) if paired else _resolve_motion_paths(root_path)
+    else:
+        paths = sorted(Path(path) for path in motion_paths)
+        if not paths:
+            raise ValueError("motion_paths must be non-empty")
+        invalid_paths = [str(path) for path in paths if not path.is_file() or path.suffix != ".npz"]
+        if invalid_paths:
+            raise ValueError(f"motion_paths must contain existing NPZ files: {invalid_paths}")
     if allow_body_subset:
-        joint_names, body_names, foot_idx = _resolve_body_subset_schema(paths, paired=paired)
+        if motion_adapter is not None:
+            raise ValueError("allow_body_subset is not supported with motion_adapter")
+        joint_names, body_names, foot_idx = _resolve_body_subset_schema(
+            paths, paired=paired, foot_names=foot_names
+        )
+        dataset_body_names = list(body_names)
         first_schema_path = paths[0][0] if paired else paths[0]
         _, first_body_names = _read_motion_schema(first_schema_path)
         if len(body_names) != len(first_body_names):
@@ -415,6 +515,7 @@ def create_motion_dataset_from_path(
     else:
         joint_names = None
         body_names = None
+        dataset_body_names = None
         foot_idx = None
     metadata_rows: list[dict] = []
     id_labels: list[dict] = []
@@ -434,8 +535,16 @@ def create_motion_dataset_from_path(
             teacher_path = path_item
             student_path = None
 
-        motion, joint_names, body_names, foot_idx = _prepare_motion_arrays(
-            teacher_path, joint_names, body_names, foot_idx, target_fps, allow_body_subset=allow_body_subset
+        motion, joint_names, body_names, dataset_body_names, foot_idx = _prepare_motion_arrays(
+            teacher_path,
+            joint_names,
+            body_names,
+            dataset_body_names,
+            foot_idx,
+            target_fps,
+            foot_names=foot_names,
+            allow_body_subset=allow_body_subset,
+            motion_adapter=motion_adapter,
         )
         start_idx = 0
         end_idx = int(motion["qpos"].shape[0])
@@ -444,13 +553,16 @@ def create_motion_dataset_from_path(
         if motion_processer is not None:
             motion = motion_processer(motion, foot_idx, teacher_path, start_idx, end_idx)
         if paired:
-            student_motion, _, _, _ = _prepare_motion_arrays(
+            student_motion, _, _, _, _ = _prepare_motion_arrays(
                 student_path,
                 joint_names,
                 body_names,
+                dataset_body_names,
                 foot_idx,
                 target_fps,
+                foot_names=foot_names,
                 allow_body_subset=allow_body_subset,
+                motion_adapter=motion_adapter,
             )
             if motion_processer is not None:
                 student_motion = motion_processer(student_motion, foot_idx, student_path, start_idx, end_idx)
@@ -542,12 +654,12 @@ def create_motion_dataset_from_path(
             del student_qpos
         load_bar.set_postfix(total=sum(lengths), motions=len(lengths))
 
-    if joint_names is None or body_names is None or len(lengths) == 0:
+    if joint_names is None or body_names is None or dataset_body_names is None or len(lengths) == 0:
         raise RuntimeError(f"No valid motions found in {root_path}")
 
     teacher = _write_motion_dataset(
         joint_names=joint_names,
-        body_names=body_names,
+        body_names=dataset_body_names,
         metadata_rows=metadata_rows,
         id_labels=id_labels,
         lengths=lengths,
@@ -561,7 +673,7 @@ def create_motion_dataset_from_path(
 
     student = _write_motion_dataset(
         joint_names=joint_names,
-        body_names=body_names,
+        body_names=dataset_body_names,
         metadata_rows=metadata_rows,
         id_labels=id_labels,
         lengths=lengths,
