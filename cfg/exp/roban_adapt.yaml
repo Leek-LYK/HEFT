@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+  - /exp/adapt@_global_
+  - override /task/profile: Roban_tracking
+  - _self_
+
+task:
+  recover_nonfinite_state: true
+  termination:
+    nonfinite_state: {}

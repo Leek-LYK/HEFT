@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - /exp/finetune@_global_
+  - override /task/profile: Roban_tracking
+  - _self_
+
+# Replace the official G1 anatomical regex map with Roban policy-joint groups.
+algo:
+  init_noise_scale_overrides: ${task.profile.policy.init_noise_scale_overrides}
+
+task:
+  recover_nonfinite_state: true
+  termination:
+    nonfinite_state: {}

@@ -13,6 +13,7 @@ import gc
 import json
 import math
 import os
+import resource
 import warnings
 from collections import OrderedDict
 from pathlib import Path
@@ -71,6 +72,57 @@ def validate_smoke_schedule(
     rollout_updates = values["total_frames"] // batch_size
     if not 2 <= rollout_updates <= 5:
         raise ValueError("PPO smoke must execute between 2 and 5 rollout updates")
+    return {
+        "batch_size": batch_size,
+        "minibatch_size": batch_size // values["num_minibatches"],
+        "estimator_sequences_per_minibatch": (
+            values["num_envs"] // values["num_minibatches"]
+        ),
+        "rollout_updates": rollout_updates,
+    }
+
+
+def validate_pilot_schedule(
+    *,
+    num_envs: int,
+    rollout_horizon: int,
+    num_minibatches: int,
+    total_frames: int,
+    target_rollout_updates: int,
+    world_size: int = 1,
+) -> dict[str, int]:
+    """Validate the exact, no-drop single-GPU batching for a formal PPO pilot."""
+    values = {
+        "num_envs": int(num_envs),
+        "rollout_horizon": int(rollout_horizon),
+        "num_minibatches": int(num_minibatches),
+        "total_frames": int(total_frames),
+        "target_rollout_updates": int(target_rollout_updates),
+        "world_size": int(world_size),
+    }
+    if values["world_size"] != 1:
+        raise ValueError("PPO pilot must run with world_size=1 (no DDP)")
+    if not 1 <= values["num_envs"] <= 256:
+        raise ValueError("PPO pilot num_envs must be in [1, 256]")
+    if values["rollout_horizon"] <= 1:
+        raise ValueError("PPO pilot rollout_horizon must be greater than one")
+    if values["num_minibatches"] <= 0:
+        raise ValueError("PPO pilot num_minibatches must be positive")
+
+    batch_size = values["num_envs"] * values["rollout_horizon"]
+    if batch_size % values["num_minibatches"]:
+        raise ValueError("rollout batch must divide evenly across PPO minibatches")
+    if values["num_envs"] % values["num_minibatches"]:
+        raise ValueError("num_envs must divide evenly across estimator minibatches")
+    if values["total_frames"] <= 0 or values["total_frames"] % batch_size:
+        raise ValueError("total_frames must be a positive multiple of the rollout batch")
+
+    rollout_updates = values["total_frames"] // batch_size
+    if rollout_updates != values["target_rollout_updates"]:
+        raise ValueError(
+            f"PPO pilot requires {values['target_rollout_updates']} rollout updates, "
+            f"got {rollout_updates}"
+        )
     return {
         "batch_size": batch_size,
         "minibatch_size": batch_size // values["num_minibatches"],
@@ -200,8 +252,29 @@ def _assert_finite(label: str, value: torch.Tensor) -> None:
         raise FloatingPointError(f"{label} contains {bad} NaN/Inf value(s)")
 
 
+def _nonfinite_summary(value: torch.Tensor, num_envs: int) -> dict[str, Any] | None:
+    finite = torch.isfinite(value)
+    if bool(finite.all().item()):
+        return None
+    bad = ~finite
+    summary: dict[str, Any] = {
+        "shape": list(value.shape),
+        "nonfinite_count": int(bad.sum().item()),
+    }
+    if value.ndim and value.shape[0] == num_envs:
+        bad_by_env = bad.reshape(num_envs, -1).any(dim=1)
+        summary["environment_indices"] = (
+            bad_by_env.nonzero().reshape(-1).detach().cpu().tolist()
+        )
+    finite_values = value[finite]
+    if finite_values.numel():
+        summary["finite_min"] = float(finite_values.min().item())
+        summary["finite_max"] = float(finite_values.max().item())
+    return summary
+
+
 class PPOSmokeDiagnostics:
-    """Observe and attest a short real PPO phase without changing its algorithm."""
+    """Observe and attest a bounded PPO smoke or pilot without changing its algorithm."""
 
     _MODULE_NAMES = (
         "actor_teacher",
@@ -230,62 +303,106 @@ class PPOSmokeDiagnostics:
         vecnorm,
         *,
         total_iters: int,
+        audit_kind: str = "smoke",
     ) -> None:
         self.cfg = cfg
         self.env = env
         self.policy = policy
         self.vecnorm = vecnorm
         self.base_env = env.base_env
+        self.audit_kind = str(audit_kind)
+        if self.audit_kind not in {"smoke", "pilot"}:
+            raise ValueError(f"unsupported PPO audit kind: {self.audit_kind}")
+        self.audit_label = f"PPO_{self.audit_kind.upper()}"
+        self.total_iters = int(total_iters)
         self.phase = str(cfg.algo.phase)
         if self.phase not in self._EXPECTED_CHANGED:
-            raise ValueError(f"unsupported PPO smoke phase: {self.phase}")
+            raise ValueError(f"unsupported {self.audit_label} phase: {self.phase}")
+        if self.audit_kind == "pilot" and self.phase != "train":
+            raise ValueError("the formal Roban pilot only supports the Teacher train phase")
 
         if os.environ.get("WORLD_SIZE", "1") != "1":
-            raise RuntimeError("PPO smoke forbids WORLD_SIZE other than 1")
+            raise RuntimeError(f"{self.audit_label} forbids WORLD_SIZE other than 1")
         visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
         if visible_devices != "3":
             raise RuntimeError(
-                f"PPO smoke requires CUDA_VISIBLE_DEVICES=3, got {visible_devices!r}"
+                f"{self.audit_label} requires CUDA_VISIBLE_DEVICES=3, got {visible_devices!r}"
             )
         if str(self.base_env.device) != "cuda:0":
             raise RuntimeError(
-                f"PPO smoke expects logical cuda:0, got {self.base_env.device}"
+                f"{self.audit_label} expects logical cuda:0, got {self.base_env.device}"
             )
 
-        smoke_cfg = cfg.get("smoke", {})
-        output_dir = Path(str(smoke_cfg.get("output_dir", ""))).resolve()
-        smoke_root_raw = os.environ.get("PPO_SMOKE_ROOT")
-        if not smoke_root_raw:
-            raise RuntimeError("PPO_SMOKE_ROOT must be set for PPO smoke")
-        smoke_root = Path(smoke_root_raw).resolve()
-        if output_dir.parent != smoke_root or output_dir.name != self.phase:
-            raise RuntimeError(
-                f"smoke output_dir must be {smoke_root / self.phase}, got {output_dir}"
-            )
+        audit_cfg = cfg.get(self.audit_kind, {})
+        self.audit_cfg = audit_cfg
+        output_dir = Path(str(audit_cfg.get("output_dir", ""))).resolve()
+        if self.audit_kind == "smoke":
+            smoke_root_raw = os.environ.get("PPO_SMOKE_ROOT")
+            if not smoke_root_raw:
+                raise RuntimeError("PPO_SMOKE_ROOT must be set for PPO smoke")
+            smoke_root = Path(smoke_root_raw).resolve()
+            if output_dir.parent != smoke_root or output_dir.name != self.phase:
+                raise RuntimeError(
+                    f"smoke output_dir must be {smoke_root / self.phase}, got {output_dir}"
+                )
+        else:
+            pilot_root_raw = os.environ.get("PILOT_ROOT")
+            if not pilot_root_raw:
+                raise RuntimeError("PILOT_ROOT must be set for PPO pilot")
+            pilot_root = Path(pilot_root_raw).resolve()
+            if output_dir != pilot_root:
+                raise RuntimeError(
+                    f"pilot output_dir must be {pilot_root}, got {output_dir}"
+                )
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
-
-        schedule = validate_smoke_schedule(
-            num_envs=self.base_env.num_envs,
-            rollout_horizon=cfg.algo.train_every,
-            num_minibatches=cfg.algo.num_minibatches,
-            total_frames=cfg.total_frames,
-            world_size=1,
+        self.rollout_offset = int(audit_cfg.get("rollout_offset", 0))
+        self.global_policy_frame_offset = int(
+            audit_cfg.get("global_policy_frame_offset", 0)
         )
+        self.checkpoint_interval = int(audit_cfg.get("checkpoint_interval", -1))
+        if self.rollout_offset < 0 or self.global_policy_frame_offset < 0:
+            raise ValueError("pilot rollout/frame offsets must be non-negative")
+        if self.global_policy_frame_offset % int(self.base_env.num_envs):
+            raise ValueError(
+                "global_policy_frame_offset must divide by num_envs exactly"
+            )
+
+        schedule_kwargs = {
+            "num_envs": self.base_env.num_envs,
+            "rollout_horizon": cfg.algo.train_every,
+            "num_minibatches": cfg.algo.num_minibatches,
+            "total_frames": cfg.total_frames,
+            "world_size": 1,
+        }
+        if self.audit_kind == "smoke":
+            schedule = validate_smoke_schedule(**schedule_kwargs)
+        else:
+            target_rollouts = int(audit_cfg.get("target_rollout_iterations", 20))
+            schedule = validate_pilot_schedule(
+                **schedule_kwargs,
+                target_rollout_updates=target_rollouts,
+            )
+            expected_num_envs = int(audit_cfg.get("expected_num_envs", 256))
+            if int(self.base_env.num_envs) != expected_num_envs:
+                raise ValueError(
+                    f"PPO pilot expected {expected_num_envs} envs, "
+                    f"got {self.base_env.num_envs}"
+                )
         if schedule["rollout_updates"] != int(total_iters):
             raise AssertionError(
                 f"derived rollout updates {schedule['rollout_updates']} != train.py {total_iters}"
             )
-        if int(cfg.algo.ppo_epochs) != 1:
+        if self.audit_kind == "smoke" and int(cfg.algo.ppo_epochs) != 1:
             raise ValueError("PPO smoke expects exactly one PPO learning epoch")
         if bool(cfg.eval_render) or bool(cfg.app.enable_cameras):
-            raise RuntimeError("PPO smoke forbids rendering and cameras")
+            raise RuntimeError(f"{self.audit_label} forbids rendering and cameras")
         if not bool(cfg.headless) or not bool(cfg.app.headless):
-            raise RuntimeError("PPO smoke must remain headless")
+            raise RuntimeError(f"{self.audit_label} must remain headless")
         if str(cfg.wandb.mode) != "disabled":
-            raise RuntimeError("PPO smoke must keep W&B disabled")
+            raise RuntimeError(f"{self.audit_label} must keep W&B disabled")
         if bool(cfg.train_record.enabled):
-            raise RuntimeError("PPO smoke must keep train_record disabled")
+            raise RuntimeError(f"{self.audit_label} must keep train_record disabled")
 
         dataset = self.base_env.command_manager.dataset
         teacher_dataset = dataset.teacher_dataset
@@ -294,13 +411,16 @@ class PPOSmokeDiagnostics:
         for raw_path in teacher_dataset.dataset_paths:
             path = Path(raw_path)
             loaded_paths.append((path if path.is_absolute() else mem_root / path).resolve())
-        expected_dataset = (mem_root / EXPECTED_DATASET_MEM_PATH).resolve()
+        expected_dataset_mem_path = str(
+            audit_cfg.get("dataset_mem_path", EXPECTED_DATASET_MEM_PATH)
+        )
+        expected_dataset = (mem_root / expected_dataset_mem_path).resolve()
         if loaded_paths != [expected_dataset]:
             raise AssertionError(
-                f"PPO smoke loaded datasets {loaded_paths}, expected {[expected_dataset]}"
+                f"{self.audit_label} loaded datasets {loaded_paths}, expected {[expected_dataset]}"
             )
         if str(dataset.ds_device) != "cpu" or str(teacher_dataset.ds_device) != "cpu":
-            raise AssertionError("PPO smoke dataset and cache must stay on CPU")
+            raise AssertionError(f"{self.audit_label} dataset and cache must stay on CPU")
         if int(self.base_env.action_dim) != EXPECTED_ACTION_DIM:
             raise AssertionError(
                 f"action dim {self.base_env.action_dim} != {EXPECTED_ACTION_DIM}"
@@ -310,9 +430,27 @@ class PPOSmokeDiagnostics:
                 f"latent dim {cfg.algo.latent_dim} != {EXPECTED_LATENT_DIM}"
             )
         if not bool(policy.student_latent_quantizer_enabled):
-            raise AssertionError("Roban PPO smoke requires the Student quantizer")
+            raise AssertionError(f"Roban {self.audit_label} requires the Student quantizer")
         if list(policy.student_latent_quantizer.parameters()):
             raise AssertionError("Student quantizer unexpectedly has trainable parameters")
+
+        self.nonfinite_recorder = getattr(
+            self.base_env, "nonfinite_diagnostics", None
+        )
+        requested_nonfinite_diagnostics = bool(
+            audit_cfg.get("nonfinite_diagnostics", {}).get("enabled", False)
+        )
+        if requested_nonfinite_diagnostics and self.nonfinite_recorder is None:
+            raise AssertionError(
+                "pilot requested nonfinite diagnostics but the environment recorder is absent"
+            )
+        if self.nonfinite_recorder is not None:
+            if self.audit_kind != "pilot":
+                raise AssertionError("event-level nonfinite diagnostics are pilot-only")
+            if self.nonfinite_recorder.output_dir != self.output_dir:
+                raise AssertionError(
+                    "nonfinite recorder and pilot output directories differ"
+                )
 
         OmegaConf.save(cfg, self.output_dir / "resolved_config.yaml")
         self.optimizer_step_counts = {
@@ -329,7 +467,9 @@ class PPOSmokeDiagnostics:
         self._pre_update_parameters: dict[str, dict[str, torch.Tensor]] = {}
         self._rollout_reward_min = math.inf
         self._rollout_reward_max = -math.inf
+        self._reset_iteration_statistics()
         self._last_fixed_input = None
+        self._previous_transition_context: dict[str, torch.Tensor] | None = None
         self._last_metrics: dict[str, Any] = {}
         self._gradient_reports: dict[str, Any] = {}
         self._phase_load_report = self._verify_input_checkpoint()
@@ -338,6 +478,7 @@ class PPOSmokeDiagnostics:
 
         self.metrics: dict[str, Any] = {
             "status": "RUNNING",
+            "audit_kind": self.audit_kind,
             "phase": self.phase,
             "python_pid": os.getpid(),
             "cuda_visible_devices": visible_devices,
@@ -350,9 +491,13 @@ class PPOSmokeDiagnostics:
                 "ppo_learning_epochs": int(cfg.algo.ppo_epochs),
                 "estimator_learning_epochs": 2,
                 "total_frames": int(cfg.total_frames),
+                "total_frames_semantics": "budget_for_this_process_run",
+                "rollout_offset": self.rollout_offset,
+                "global_policy_frame_offset": self.global_policy_frame_offset,
+                "checkpoint_interval": self.checkpoint_interval,
                 "optimizer": str(cfg.algo.optimizer),
                 "dataset_path": str(expected_dataset),
-                "dataset_mem_path": EXPECTED_DATASET_MEM_PATH,
+                "dataset_mem_path": expected_dataset_mem_path,
                 "dataset_device": str(teacher_dataset.ds_device),
                 "step_dt": float(self.base_env.step_dt),
                 "physics_dt": float(self.base_env.physics_dt),
@@ -364,7 +509,7 @@ class PPOSmokeDiagnostics:
         self._sample_memory("after_initialization")
         self._flush_metrics()
         print(
-            "PPO_SMOKE_START "
+            f"{self.audit_label}_START "
             f"phase={self.phase} pid={os.getpid()} schedule={schedule}",
             flush=True,
         )
@@ -389,9 +534,14 @@ class PPOSmokeDiagnostics:
         expected_previous = self._EXPECTED_PREVIOUS[self.phase]
         raw_path = self.cfg.checkpoint_path
         if expected_previous is None:
-            if raw_path is not None:
+            if raw_path is None:
+                return None
+            if not (
+                self.audit_kind == "pilot"
+                and bool(self.audit_cfg.get("allow_teacher_resume", False))
+            ):
                 raise AssertionError("train smoke must start without a checkpoint")
-            return None
+            expected_previous = "train"
         if raw_path is None or str(raw_path).startswith("run:"):
             raise AssertionError(
                 f"{self.phase} smoke must use the prior local checkpoint path"
@@ -416,6 +566,10 @@ class PPOSmokeDiagnostics:
             if self.phase == "adapt" and name == "actor_student":
                 # Official phase switch initializes Student from Teacher.
                 comparison_state = policy_state["actor_teacher"]
+            elif self.phase == "train" and name == "actor_student":
+                # Loading a Teacher checkpoint intentionally refreshes the
+                # unused Student actor from the Teacher actor.
+                comparison_state = policy_state["actor_teacher"]
             max_abs_deltas[name] = _module_state_max_abs_delta(comparison_state, module)
         critical_missing = {
             name: report
@@ -431,6 +585,7 @@ class PPOSmokeDiagnostics:
             "checkpoint_size_bytes": checkpoint_path.stat().st_size,
             "expected_previous_phase": expected_previous,
             "source_phase": source_phase,
+            "teacher_continuation": self.phase == "train",
             "official_teacher_to_student_hard_copy": self.phase == "adapt",
             "module_key_reports": key_reports,
             "loaded_module_max_abs_delta": max_abs_deltas,
@@ -453,16 +608,109 @@ class PPOSmokeDiagnostics:
     def _flush_metrics(self) -> None:
         self._write_json("metrics.json", self.metrics)
 
+    def _reset_iteration_statistics(self) -> None:
+        device = self.base_env.device
+        reward_group_count = len(self.policy.reward_groups)
+        self._iteration_reward_sum = torch.zeros(
+            reward_group_count, device=device, dtype=torch.float64
+        )
+        self._iteration_transition_count = 0
+        self._iteration_episode_count = torch.zeros((), device=device, dtype=torch.long)
+        self._iteration_terminated_count = torch.zeros((), device=device, dtype=torch.long)
+        self._iteration_truncated_count = torch.zeros((), device=device, dtype=torch.long)
+        self._iteration_immediate_termination_count = torch.zeros(
+            (), device=device, dtype=torch.long
+        )
+        self._iteration_episode_stat_sums: dict[str, torch.Tensor] = {}
+
+    def _iteration_episode_summary(self) -> dict[str, Any]:
+        episode_count = int(self._iteration_episode_count.item())
+        terminated_count = int(self._iteration_terminated_count.item())
+        truncated_count = int(self._iteration_truncated_count.item())
+        immediate_count = int(self._iteration_immediate_termination_count.item())
+        episode_means = {}
+        episode_sums = {
+            key: float(value.item())
+            for key, value in sorted(self._iteration_episode_stat_sums.items())
+        }
+        if episode_count:
+            episode_means = {
+                key: float((value / episode_count).item())
+                for key, value in sorted(self._iteration_episode_stat_sums.items())
+            }
+        reward_returns = [
+            value
+            for key, value in episode_means.items()
+            if key.endswith("/return")
+        ]
+        mean_episode_reward = sum(reward_returns) if reward_returns else None
+        episode_length_sum = float(
+            self._iteration_episode_stat_sums.get(
+                "episode_len", torch.zeros((), device=self.base_env.device)
+            ).item()
+        )
+        per_step_episode_stats = {}
+        if episode_length_sum > 0.0:
+            per_step_episode_stats = {
+                key: value / episode_length_sum
+                for key, value in episode_sums.items()
+                if key != "episode_len"
+            }
+
+        transition_count = int(self._iteration_transition_count)
+        step_reward_means = {}
+        if transition_count:
+            reward_values = (
+                self._iteration_reward_sum / transition_count
+            ).detach().cpu().tolist()
+            step_reward_means = {
+                str(name): float(value)
+                for name, value in zip(self.policy.reward_groups, reward_values)
+            }
+        return {
+            "completed_episodes": episode_count,
+            "terminated_episodes": terminated_count,
+            "truncated_episodes": truncated_count,
+            "termination_rate_per_completed_episode": (
+                terminated_count / episode_count if episode_count else None
+            ),
+            "termination_rate_per_transition": (
+                terminated_count / transition_count if transition_count else None
+            ),
+            "immediate_terminations_le_10_steps": immediate_count,
+            "immediate_termination_rate_per_completed_episode": (
+                immediate_count / episode_count if episode_count else None
+            ),
+            "mean_episode_reward": mean_episode_reward,
+            "mean_episode_length": episode_means.get("episode_len"),
+            "mean_episode_stats": episode_means,
+            "episode_stat_sums": episode_sums,
+            "episode_length_sum": episode_length_sum,
+            "mean_episode_stats_per_step": per_step_episode_stats,
+            "mean_step_reward_by_group": step_reward_means,
+        }
+
     def _sample_memory(self, label: str) -> dict[str, int | str]:
         device = str(self.base_env.device)
         torch.cuda.synchronize(device)
         free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+        cpu_peak_rss_mib = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) / 1024.0
+        cpu_current_rss_mib = None
+        try:
+            for line in Path("/proc/self/status").read_text(encoding="utf-8").splitlines():
+                if line.startswith("VmRSS:"):
+                    cpu_current_rss_mib = float(line.split()[1]) / 1024.0
+                    break
+        except OSError:
+            pass
         sample = {
             "label": label,
             "used_mib": int((total_bytes - free_bytes) // MIB),
             "free_mib": int(free_bytes // MIB),
             "torch_allocated_mib": int(torch.cuda.memory_allocated(device) // MIB),
             "torch_reserved_mib": int(torch.cuda.memory_reserved(device) // MIB),
+            "cpu_peak_rss_mib": cpu_peak_rss_mib,
+            "cpu_current_rss_mib": cpu_current_rss_mib,
         }
         self.metrics.setdefault("gpu_memory_samples", []).append(sample)
         return sample
@@ -481,12 +729,37 @@ class PPOSmokeDiagnostics:
         self.metrics["reset_finite"] = True
         self._flush_metrics()
 
+    def before_transition(self, *, iteration: int, rollout_step: int) -> None:
+        """Provide exact rollout/frame counters to the simulator event probe."""
+        if self.nonfinite_recorder is None:
+            return
+        local_policy_step = int(iteration) * int(self.cfg.algo.train_every) + int(
+            rollout_step
+        )
+        global_policy_frame = self.global_policy_frame_offset + (
+            local_policy_step + 1
+        ) * int(self.base_env.num_envs)
+        global_policy_step = (
+            self.global_policy_frame_offset // int(self.base_env.num_envs)
+        ) + local_policy_step
+        self.base_env.set_nonfinite_diagnostic_context(
+            policy_iteration=self.rollout_offset + int(iteration) + 1,
+            global_policy_frame=global_policy_frame,
+            global_physics_tick_base=(
+                global_policy_step * int(self.base_env.decimation)
+            ),
+        )
+
     def observe_transition(self, td, *, iteration: int, rollout_step: int) -> None:
         observation = td["policy"]
         action = td["action"]
         reward = td["next", "reward"]
+        done = td["next", "done"].reshape(-1)
+        terminated = td["next", "terminated"].reshape(-1)
+        truncated = td["next", "truncated"].reshape(-1)
         value = td["state_value"]
         next_value = td["next", "state_value"]
+        stats = td["next", "stats"]
         if tuple(observation.shape) != (
             int(self.base_env.num_envs),
             EXPECTED_OBSERVATION_DIM,
@@ -494,8 +767,11 @@ class PPOSmokeDiagnostics:
             raise AssertionError(f"policy observation shape mismatch: {observation.shape}")
         if tuple(action.shape) != (int(self.base_env.num_envs), EXPECTED_ACTION_DIM):
             raise AssertionError(f"action shape mismatch: {action.shape}")
-        for label, tensor in (
+        validation_tensors = (
             ("policy_observation", observation),
+            ("next_policy_observation", td["next", "policy"]),
+            ("next_private_observation", td["next", "priv"]),
+            ("next_critic_private_observation", td["next", "priv_critic"]),
             ("action", action),
             ("reward", reward),
             ("value", value),
@@ -503,8 +779,137 @@ class PPOSmokeDiagnostics:
             ("qpos", self.base_env.sim.data.qpos),
             ("qvel", self.base_env.sim.data.qvel),
             ("torque", self.base_env.scene["robot"].data.qfrc_actuator),
-        ):
-            _assert_finite(label, tensor)
+        )
+        failures = {
+            label: summary
+            for label, tensor in validation_tensors
+            if (summary := _nonfinite_summary(tensor, int(self.base_env.num_envs)))
+            is not None
+        }
+        if failures:
+            recovered_ids = (
+                self.base_env._nonfinite_state_mask.nonzero()
+                .reshape(-1)
+                .detach()
+                .cpu()
+                .tolist()
+            )
+            bad_environment_indices = sorted(
+                recovered_ids
+                or {
+                    int(env_id)
+                    for summary in failures.values()
+                    for env_id in summary.get("environment_indices", [])
+                }
+            )
+            bad_env_ids = torch.tensor(
+                bad_environment_indices,
+                device=self.base_env.device,
+                dtype=torch.long,
+            )
+
+            def selected(tensor):
+                if not isinstance(tensor, torch.Tensor):
+                    return None
+                return tensor[bad_env_ids].detach().cpu()
+
+            component_failures = {}
+            for key, tensor in stats.items(True, True):
+                if not isinstance(tensor, torch.Tensor):
+                    continue
+                label = "/".join(key) if isinstance(key, tuple) else str(key)
+                summary = _nonfinite_summary(tensor, int(self.base_env.num_envs))
+                if summary is not None:
+                    component_failures[label] = summary
+
+            derived_failures = {}
+            asset_data = self.base_env.scene["robot"].data
+            for name in (
+                "joint_pos",
+                "joint_vel",
+                "joint_acc",
+                "actuator_force",
+                "qfrc_actuator",
+                "body_link_pos_w",
+                "body_link_quat_w",
+                "body_link_lin_vel_w",
+                "body_link_ang_vel_w",
+            ):
+                tensor = getattr(asset_data, name, None)
+                if not isinstance(tensor, torch.Tensor):
+                    continue
+                summary = _nonfinite_summary(tensor, int(self.base_env.num_envs))
+                if summary is not None:
+                    derived_failures[name] = summary
+
+            command = self.base_env.command_manager
+            action_manager = self.base_env.action_manager
+            dataset = command.dataset
+            motion_ids = selected(dataset._motion_ids_A).tolist()
+            motion_context = []
+            for env_id, motion_id in zip(bad_environment_indices, motion_ids):
+                motion_context.append(
+                    {
+                        "environment_index": env_id,
+                        "motion_id": int(motion_id),
+                        "motion_label": dataset.motion_labels[int(motion_id)],
+                        "motion_source_path": dataset.motion_source_paths[int(motion_id)],
+                    }
+                )
+
+            current_context = {
+                "action": selected(action),
+                "action_loc": selected(td.get("loc", None)),
+                "action_scale": selected(td.get("scale", None)),
+                "applied_action": selected(action_manager.applied_action),
+                "joint_position_target": selected(asset_data.joint_pos_target),
+                "joint_offset": selected(action_manager.offset),
+                "action_alpha": selected(action_manager.alpha),
+                "action_delay": selected(action_manager.delay),
+                "episode_length": selected(self.base_env.episode_length_buf),
+                "motion_frame": selected(command.t),
+                "motion_length": selected(command.lengths),
+            }
+            motor_randomization = self.base_env.randomizations.get(
+                "motor_params_implicit"
+            )
+            if motor_randomization is not None:
+                current_context["motor_stiffness_scale"] = selected(
+                    motor_randomization._obs_kp_scale
+                )
+                current_context["motor_damping_scale"] = selected(
+                    motor_randomization._obs_kd_scale
+                )
+                current_context["motor_armature_scale"] = selected(
+                    motor_randomization._obs_arm_scale
+                )
+            previous_context = (
+                None
+                if self._previous_transition_context is None
+                else {
+                    name: selected(tensor)
+                    for name, tensor in self._previous_transition_context.items()
+                }
+            )
+
+            report = {
+                "iteration": int(iteration),
+                "rollout_step": int(rollout_step),
+                "environment_indices": bad_environment_indices,
+                "tensor_failures": failures,
+                "reward_or_termination_stat_failures": component_failures,
+                "derived_state_failures": derived_failures,
+                "motion_context": motion_context,
+                "previous_transition_context": previous_context,
+                "current_transition_context": current_context,
+            }
+            self.metrics["status"] = "FAILED_NONFINITE"
+            self.metrics["failure"] = report
+            self._write_json("nonfinite_failure.json", report)
+            self._flush_metrics()
+            print(f"{self.audit_label}_NONFINITE {_jsonable(report)}", flush=True)
+            labels = ", ".join(sorted(failures))
+            raise FloatingPointError(f"non-finite tensors detected: {labels}")
         actor_input = td.get("_actor_inp", None)
         if actor_input is not None:
             if actor_input.shape[-1] != EXPECTED_ACTOR_INPUT_DIM:
@@ -512,12 +917,41 @@ class PPOSmokeDiagnostics:
                     f"actor input width {actor_input.shape[-1]} != {EXPECTED_ACTOR_INPUT_DIM}"
                 )
             _assert_finite("actor_input", actor_input)
+        self._previous_transition_context = {
+            "qpos": self.base_env.sim.data.qpos.detach().clone(),
+            "qvel": self.base_env.sim.data.qvel.detach().clone(),
+            "action": action.detach().clone(),
+            "applied_action": self.base_env.action_manager.applied_action.detach().clone(),
+            "joint_position_target": self.base_env.scene[
+                "robot"
+            ].data.joint_pos_target.detach().clone(),
+            "episode_length": self.base_env.episode_length_buf.detach().clone(),
+            "motion_frame": self.base_env.command_manager.t.detach().clone(),
+        }
         self._rollout_reward_min = min(
             self._rollout_reward_min, float(reward.min().item())
         )
         self._rollout_reward_max = max(
             self._rollout_reward_max, float(reward.max().item())
         )
+        self._iteration_reward_sum.add_(reward.detach().double().sum(dim=0))
+        self._iteration_transition_count += int(reward.shape[0])
+        self._iteration_episode_count.add_(done.sum())
+        self._iteration_terminated_count.add_(terminated.sum())
+        self._iteration_truncated_count.add_(truncated.sum())
+        episode_len = stats["episode_len"].reshape(-1)
+        self._iteration_immediate_termination_count.add_(
+            (terminated & (episode_len <= 10)).sum()
+        )
+        if bool(done.any().item()):
+            for key, tensor in stats.items(True, True):
+                if not isinstance(tensor, torch.Tensor) or tensor.shape[0] != done.shape[0]:
+                    continue
+                flat_key = "/".join(key) if isinstance(key, tuple) else str(key)
+                value = tensor[done].detach().double().sum()
+                if flat_key not in self._iteration_episode_stat_sums:
+                    self._iteration_episode_stat_sums[flat_key] = torch.zeros_like(value)
+                self._iteration_episode_stat_sums[flat_key].add_(value)
         self._last_fixed_input = td.select(
             "policy", "priv", "priv_critic", "is_init", strict=False
         )[: min(4, int(self.base_env.num_envs))].clone().cpu()
@@ -550,7 +984,15 @@ class PPOSmokeDiagnostics:
         }
         self._sample_memory(f"iteration_{iteration}_before_update")
 
-    def after_update(self, data, train_metrics: Mapping[str, Any], *, iteration: int) -> None:
+    def after_update(
+        self,
+        data,
+        train_metrics: Mapping[str, Any],
+        *,
+        iteration: int,
+        rollout_time: float | None = None,
+        training_time: float | None = None,
+    ) -> None:
         for name, value in train_metrics.items():
             if isinstance(value, torch.Tensor):
                 _assert_finite(f"metric.{name}", value)
@@ -581,8 +1023,25 @@ class PPOSmokeDiagnostics:
                 raise AssertionError(f"zero {name} gradients: {report}")
         self._gradient_reports[f"iteration_{iteration}"] = gradients
 
+        timing = {}
+        if rollout_time is not None and training_time is not None:
+            rollout_time = float(rollout_time)
+            training_time = float(training_time)
+            if not math.isfinite(rollout_time) or rollout_time <= 0.0:
+                raise FloatingPointError(f"invalid rollout_time: {rollout_time}")
+            if not math.isfinite(training_time) or training_time <= 0.0:
+                raise FloatingPointError(f"invalid training_time: {training_time}")
+            frames = int(data.numel())
+            timing = {
+                "rollout_time_s": rollout_time,
+                "training_time_s": training_time,
+                "rollout_steps_per_second": frames / rollout_time,
+                "end_to_end_steps_per_second": frames / (rollout_time + training_time),
+            }
+
         rollout = {
             "iteration": int(iteration),
+            "rollout_index": self.rollout_offset + int(iteration) + 1,
             "rollout_complete": True,
             "batch_shape": list(data.shape),
             "batch_size": int(data.numel()),
@@ -594,16 +1053,51 @@ class PPOSmokeDiagnostics:
             "metrics": _jsonable(train_metrics),
             "gradients": gradients,
             "parameter_changes": changes,
+            "optimizer_step_counts": dict(self.optimizer_step_counts),
+            "nonfinite_state_recoveries_total": int(
+                self.base_env.nonfinite_state_recovery_count
+            ),
+            "nonfinite_events_in_iteration": (
+                0
+                if self.nonfinite_recorder is None
+                else int(
+                    self.nonfinite_recorder.events_by_iteration.get(
+                        str(self.rollout_offset + int(iteration) + 1), 0
+                    )
+                )
+            ),
+            "episode": self._iteration_episode_summary(),
+            "timing": timing,
             "gpu_memory": self._sample_memory(f"iteration_{iteration}_after_update"),
         }
         self.metrics["rollouts"].append(rollout)
         self.metrics["optimizer_step_counts"] = dict(self.optimizer_step_counts)
         self._rollout_reward_min = math.inf
         self._rollout_reward_max = -math.inf
+        self._reset_iteration_statistics()
         self._last_metrics = dict(train_metrics)
+        if self.nonfinite_recorder is not None:
+            self.nonfinite_recorder.flush_summary(status="RUNNING")
         self._flush_metrics()
+        completed_rollouts = int(iteration) + 1
+        if (
+            self.checkpoint_interval > 0
+            and completed_rollouts % self.checkpoint_interval == 0
+        ):
+            checkpoint_name = (
+                f"checkpoint_{self.rollout_offset + completed_rollouts:04d}.pt"
+            )
+            checkpoint_path = self._save_checkpoint(checkpoint_name)
+            self.metrics.setdefault("periodic_checkpoints", []).append(
+                {
+                    "rollout_index": self.rollout_offset + completed_rollouts,
+                    "path": str(checkpoint_path),
+                    "size_bytes": checkpoint_path.stat().st_size,
+                }
+            )
+            self._flush_metrics()
         print(
-            f"PPO_SMOKE_UPDATE phase={self.phase} iteration={iteration} "
+            f"{self.audit_label}_UPDATE phase={self.phase} iteration={iteration} "
             f"optimizer_steps={self.optimizer_step_counts} metrics={_jsonable(train_metrics)}",
             flush=True,
         )
@@ -765,6 +1259,56 @@ class PPOSmokeDiagnostics:
         payload["vecnorm"] = self.vecnorm.state_dict()
         return payload
 
+    def _save_checkpoint(self, file_name: str) -> Path:
+        checkpoint_path = self.output_dir / file_name
+        torch.save(self._checkpoint_payload(), checkpoint_path)
+        if not checkpoint_path.is_file() or checkpoint_path.stat().st_size == 0:
+            raise AssertionError(
+                f"checkpoint save produced an empty file: {checkpoint_path}"
+            )
+        return checkpoint_path
+
+    def abort(self, error: BaseException) -> Path | None:
+        """Persist the recoverable state and diagnostics before propagating failure."""
+        checkpoint_path = None
+        checkpoint_error = None
+        try:
+            checkpoint_path = self._save_checkpoint("checkpoint_abort.pt")
+            (self.output_dir / "checkpoint_path.txt").write_text(
+                str(checkpoint_path) + "\n", encoding="utf-8"
+            )
+        except BaseException as save_error:  # preserve the original failure
+            checkpoint_error = f"{type(save_error).__name__}: {save_error}"
+
+        nonfinite_summary = None
+        if self.nonfinite_recorder is not None:
+            nonfinite_summary = self.nonfinite_recorder.flush_summary(
+                status="ABORTED"
+            )
+        self.metrics.update(
+            {
+                "status": "ABORTED",
+                "rollout_count": len(self.metrics.get("rollouts", [])),
+                "failure": {
+                    "type": type(error).__name__,
+                    "message": str(error),
+                },
+                "abort_checkpoint_path": (
+                    None if checkpoint_path is None else str(checkpoint_path)
+                ),
+                "abort_checkpoint_error": checkpoint_error,
+                "nonfinite_summary": nonfinite_summary,
+            }
+        )
+        self._flush_metrics()
+        print(
+            f"{self.audit_label}_RESULT=ABORTED "
+            f"error={type(error).__name__}: {error} "
+            f"checkpoint={checkpoint_path}",
+            flush=True,
+        )
+        return checkpoint_path
+
     def _verify_final_module_changes(self) -> dict[str, Any]:
         report = {}
         for name in self._MODULE_NAMES:
@@ -789,6 +1333,8 @@ class PPOSmokeDiagnostics:
             copy.deepcopy(OmegaConf.to_container(self.cfg, resolve=False))
         )
         reload_cfg.checkpoint_path = str(checkpoint_path)
+        if reload_cfg.task.get("nonfinite_diagnostics", None) is not None:
+            reload_cfg.task.nonfinite_diagnostics.enabled = False
         reload_env = None
         caught_warnings = []
         try:
@@ -861,21 +1407,48 @@ class PPOSmokeDiagnostics:
         final_changes = self._verify_final_module_changes()
         self._write_json("gradient_report.json", self._gradient_reports)
 
+        ppo_steps = (
+            self.total_iters
+            * int(self.cfg.algo.ppo_epochs)
+            * int(self.cfg.algo.num_minibatches)
+        )
+        estimator_steps = self.total_iters * 2 * int(self.cfg.algo.num_minibatches)
         expected_counts = {
-            "train": {"teacher": 2, "student": 0, "critic": 2, "estimator": 4},
-            "adapt": {"teacher": 0, "student": 0, "critic": 0, "estimator": 4},
-            "finetune": {"teacher": 0, "student": 2, "critic": 2, "estimator": 0},
+            "train": {
+                "teacher": ppo_steps,
+                "student": 0,
+                "critic": ppo_steps,
+                "estimator": estimator_steps,
+            },
+            "adapt": {
+                "teacher": 0,
+                "student": 0,
+                "critic": 0,
+                "estimator": estimator_steps,
+            },
+            "finetune": {
+                "teacher": 0,
+                "student": ppo_steps,
+                "critic": ppo_steps,
+                "estimator": 0,
+            },
         }[self.phase]
         if self.optimizer_step_counts != expected_counts:
             raise AssertionError(
                 f"optimizer step counts {self.optimizer_step_counts} != {expected_counts}"
             )
 
+        device = str(self.base_env.device)
+        training_resource_peaks = {
+            "gpu_allocated_mib": int(torch.cuda.max_memory_allocated(device) // MIB),
+            "gpu_reserved_mib": int(torch.cuda.max_memory_reserved(device) // MIB),
+            "cpu_peak_rss_mib": float(
+                resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            )
+            / 1024.0,
+        }
         expected_action = self._deterministic_action(self.policy)
-        checkpoint_path = self.output_dir / "checkpoint_final.pt"
-        torch.save(self._checkpoint_payload(), checkpoint_path)
-        if not checkpoint_path.is_file() or checkpoint_path.stat().st_size == 0:
-            raise AssertionError("checkpoint save produced an empty file")
+        checkpoint_path = self._save_checkpoint("checkpoint_final.pt")
         (self.output_dir / "checkpoint_path.txt").write_text(
             str(checkpoint_path) + "\n", encoding="utf-8"
         )
@@ -883,18 +1456,49 @@ class PPOSmokeDiagnostics:
         self._write_json("checkpoint_roundtrip_report.json", reload_report)
 
         self._sample_memory("after_checkpoint_reload")
-        device = str(self.base_env.device)
+        timing_rows = [row["timing"] for row in self.metrics["rollouts"] if row["timing"]]
+        timing_summary = {}
+        if timing_rows:
+            total_frames = sum(row["batch_size"] for row in self.metrics["rollouts"])
+            total_rollout_time = sum(row["rollout_time_s"] for row in timing_rows)
+            total_training_time = sum(row["training_time_s"] for row in timing_rows)
+            timing_summary = {
+                "total_rollout_time_s": total_rollout_time,
+                "total_training_time_s": total_training_time,
+                "rollout_steps_per_second": total_frames / total_rollout_time,
+                "end_to_end_steps_per_second": total_frames
+                / (total_rollout_time + total_training_time),
+            }
+        sampled_gpu_peak_mib = max(
+            sample["used_mib"] for sample in self.metrics["gpu_memory_samples"]
+        )
+        cpu_peak_rss_mib = max(
+            sample["cpu_peak_rss_mib"] for sample in self.metrics["gpu_memory_samples"]
+        )
+        cpu_current_samples = [
+            sample["cpu_current_rss_mib"]
+            for sample in self.metrics["gpu_memory_samples"]
+            if sample.get("cpu_current_rss_mib") is not None
+        ]
+        nonfinite_summary = None
+        if self.nonfinite_recorder is not None:
+            nonfinite_summary = self.nonfinite_recorder.flush_summary(status="PASS")
         self.metrics.update(
             {
                 "status": "PASS",
                 "rollout_count": len(self.metrics["rollouts"]),
                 "optimizer_step_counts": dict(self.optimizer_step_counts),
+                "nonfinite_state_recoveries_total": int(
+                    self.base_env.nonfinite_state_recovery_count
+                ),
                 "last_train_metrics": _jsonable(self._last_metrics),
                 "contract": contract_report,
                 "final_parameter_changes": final_changes,
                 "checkpoint_path": str(checkpoint_path),
                 "checkpoint_size_bytes": checkpoint_path.stat().st_size,
                 "checkpoint_reload": reload_report,
+                "timing": timing_summary,
+                "training_resource_peaks": training_resource_peaks,
                 "gpu": {
                     "peak_allocated_mib": int(
                         torch.cuda.max_memory_allocated(device) // MIB
@@ -902,13 +1506,17 @@ class PPOSmokeDiagnostics:
                     "peak_reserved_mib": int(
                         torch.cuda.max_memory_reserved(device) // MIB
                     ),
+                    "sampled_device_used_peak_mib": sampled_gpu_peak_mib,
                 },
+                "cpu": {"peak_rss_mib": cpu_peak_rss_mib},
+                "cpu_current_rss_samples_mib": cpu_current_samples,
+                "nonfinite_summary": nonfinite_summary,
                 "no_nan_or_inf": True,
             }
         )
         self._flush_metrics()
         print(
-            f"PPO_SMOKE_RESULT=PASS phase={self.phase} "
+            f"{self.audit_label}_RESULT=PASS phase={self.phase} "
             f"checkpoint={checkpoint_path} optimizer_steps={self.optimizer_step_counts}",
             flush=True,
         )

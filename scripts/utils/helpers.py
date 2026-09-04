@@ -100,7 +100,65 @@ from torchrl.envs.transforms.transforms import _sum_left
 import active_adaptation as aa
 
 
-class SymmetricVecNorm(VecNorm):
+class MaskedVecNorm(VecNorm):
+    """VecNorm that can exclude marked environment rows from running moments."""
+
+    def __init__(self, *args, valid_mask_key="_vecnorm_valid", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.valid_mask_key = valid_mask_key
+        self._active_valid_mask = None
+
+    def _call(self, next_tensordict: TensorDictBase) -> TensorDictBase:
+        self._active_valid_mask = next_tensordict.get(
+            self.valid_mask_key, None
+        )
+        try:
+            return super()._call(next_tensordict)
+        finally:
+            self._active_valid_mask = None
+
+    forward = _call
+
+    def _weighted_moments(self, value, reference, N):
+        valid = self._active_valid_mask
+        if valid is None or value.ndim == 0 or value.shape[0] != valid.numel():
+            value_sum = _sum_left(value, reference)
+            value_ssq = _sum_left(value.pow(2), reference)
+            count = N
+        else:
+            weights = valid.reshape(
+                valid.numel(), *([1] * (value.ndim - 1))
+            ).to(dtype=value.dtype)
+            value_sum = _sum_left(value * weights, reference)
+            value_ssq = _sum_left(value.pow(2) * weights, reference)
+            count = weights.reshape(valid.numel(), -1)[:, 0].sum()
+        return value_sum, value_ssq, count
+
+    def _update(self, key, value, N) -> torch.Tensor:
+        _sum = self._td.get(_append_last(key, "_sum"))
+        _ssq = self._td.get(_append_last(key, "_ssq"))
+        _count = self._td.get(_append_last(key, "_count"))
+        value_sum, value_ssq, count_update = self._weighted_moments(
+            value, _sum, N
+        )
+
+        if not self.frozen:
+            _sum *= self.decay
+            _sum += value_sum
+            self._td.set_(_append_last(key, "_sum"), _sum)
+            _ssq *= self.decay
+            _ssq += value_ssq
+            self._td.set_(_append_last(key, "_ssq"), _ssq)
+            _count *= self.decay
+            _count += count_update
+            self._td.set_(_append_last(key, "_count"), _count)
+
+        mean = _sum / _count
+        std = (_ssq / _count - mean.pow(2)).clamp_min(self.eps).sqrt()
+        return (value - mean) / std.clamp_min(self.eps)
+
+
+class SymmetricVecNorm(MaskedVecNorm):
     """VecNorm that updates running stats with both sample and mirrored sample."""
 
     def __init__(self, *args, symmetry_transforms=None, **kwargs):
@@ -118,9 +176,9 @@ class SymmetricVecNorm(VecNorm):
         _ssq = self._td.get(_append_last(key, "_ssq"))
         _count = self._td.get(_append_last(key, "_count"))
 
-        value_sum = _sum_left(value, _sum)
-        value_ssq = _sum_left(value.pow(2), _ssq)
-        count_update = N
+        value_sum, value_ssq, count_update = self._weighted_moments(
+            value, _sum, N
+        )
 
         symmetry = self._get_symmetry(key)
         if symmetry is not None:
@@ -131,7 +189,7 @@ class SymmetricVecNorm(VecNorm):
                 )
             value_sum = value_sum + symmetry(value_sum, sign=True)
             value_ssq = value_ssq + symmetry(value_ssq, sign=False)
-            count_update = 2 * N
+            count_update = 2 * count_update
 
         if not self.frozen:
             _sum *= self.decay
@@ -218,7 +276,7 @@ def make_env_policy(cfg: DictConfig):
         )
     else:
         print(colored("[Info]: symmetry VecNorm disabled by cfg.", "yellow"))
-        vecnorm = VecNorm(obs_keys, decay=0.9999)
+        vecnorm = MaskedVecNorm(obs_keys, decay=0.9999)
     vecnorm(base_env.fake_tensordict())
 
     if "vecnorm" in state_dict.keys():

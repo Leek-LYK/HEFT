@@ -1,9 +1,11 @@
 import copy
+import os
 import torch
 import hydra
 import inspect
 import time
-from typing import NamedTuple, Dict, Optional
+from pathlib import Path
+from typing import Any, NamedTuple, Dict, Optional
 
 from tensordict.tensordict import TensorDictBase, TensorDict
 from torchrl.envs import EnvBase
@@ -32,6 +34,17 @@ from active_adaptation.envs.mdp.randomizations import (
 )
 from active_adaptation.envs.mdp.rewards import REW_REGISTRY, Reward, reward_wrapper
 from active_adaptation.envs.mdp.terminations import TERM_REGISTRY, Termination, termination_wrapper
+
+
+def apply_termination_grace_and_recovery(
+    terminated: torch.Tensor,
+    episode_length: torch.Tensor,
+    recovery_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Keep the startup grace period except for recovered non-finite rows."""
+    return (
+        terminated & (episode_length > 5).unsqueeze(1)
+    ) | recovery_mask.unsqueeze(1)
 
 class _NullDebugDraw:
     def clear(self):
@@ -229,6 +242,10 @@ class RewardGroup:
         rewards = []
         for key, func in self.funcs.items():
             reward, count = func()
+            if self.env.recover_nonfinite_state:
+                reward = reward.masked_fill(
+                    self.env._nonfinite_state_mask.unsqueeze(1), 0.0
+                )
             self.env.stats[self.name, key].add_(reward)
             sum, cnt = self.env._stats_ema[self.name][key]
             sum.mul_(self.env._stats_ema_decay).add_(reward.sum())
@@ -274,6 +291,17 @@ class _Env(EnvBase):
             run_type_checks=False,
         )
         self.episode_length_buf = torch.zeros(self.num_envs, dtype=int, device=self.device)
+        self.recover_nonfinite_state = bool(
+            self.cfg.get("recover_nonfinite_state", False)
+        )
+        self._nonfinite_state_mask = torch.zeros(
+            self.num_envs, dtype=torch.bool, device=self.device
+        )
+        self.nonfinite_state_recovery_count = 0
+        self.nonfinite_diagnostics = None
+        self._nonfinite_policy_iteration = 0
+        self._nonfinite_global_policy_frame = 0
+        self._nonfinite_global_physics_tick_base = 0
 
         # parse obs and reward functions
         self.done_spec = Composite(
@@ -334,6 +362,22 @@ class _Env(EnvBase):
         self.action_manager: ActionManager = hydra.utils.instantiate(self.cfg.action, env=self)
         self._reset_callbacks.append(self.action_manager.reset)
         self._debug_draw_callbacks.append(self.action_manager.debug_draw)
+
+        diagnostics_cfg = self.cfg.get("nonfinite_diagnostics", {})
+        if bool(diagnostics_cfg.get("enabled", False)):
+            if not self.recover_nonfinite_state:
+                raise ValueError(
+                    "nonfinite diagnostics require recover_nonfinite_state=true"
+                )
+            from active_adaptation.utils.nonfinite_diagnostics import (
+                NonfiniteEventRecorder,
+            )
+
+            self.nonfinite_diagnostics = NonfiniteEventRecorder.from_config(
+                diagnostics_cfg,
+                num_envs=self.num_envs,
+                decimation=self.decimation,
+            )
         
         self.action_spec = Composite(
             {
@@ -487,6 +531,9 @@ class _Env(EnvBase):
         else:
             env_mask = torch.ones(self.num_envs, dtype=bool, device=self.device)
         env_ids = env_mask.nonzero().squeeze(-1)
+        recovered_env_ids = env_ids[
+            self._nonfinite_state_mask[env_ids]
+        ] if self.recover_nonfinite_state else env_ids[:0]
 
         # reset things in simulation
         if env_ids.numel() > 0:
@@ -498,6 +545,14 @@ class _Env(EnvBase):
         # reset mdp
         for callback in self._reset_callbacks:
             callback(env_ids)
+
+        # A final forward() in the terminal transition can regenerate invalid
+        # acceleration/sensor scratch values after the immediate recovery.  Do
+        # not carry that scratch state into the replacement episode.
+        if recovered_env_ids.numel() > 0:
+            self.sim.data.qacc[recovered_env_ids] = 0.0
+            self.sim.data.qacc_warmstart[recovered_env_ids] = 0.0
+            self.sim.data.sensordata[recovered_env_ids] = 0.0
 
         # clean up obs
         tensordict = TensorDict({}, self.num_envs, device=self.device)
@@ -513,10 +568,274 @@ class _Env(EnvBase):
         self.input_tensordict = tensordict
         self.action_manager(tensordict, substep)
 
+    def set_nonfinite_diagnostic_context(
+        self,
+        *,
+        policy_iteration: int,
+        global_policy_frame: int,
+        global_physics_tick_base: int,
+    ) -> None:
+        """Attach trainer counters to any event produced by the next policy step."""
+        self._nonfinite_policy_iteration = int(policy_iteration)
+        self._nonfinite_global_policy_frame = int(global_policy_frame)
+        self._nonfinite_global_physics_tick_base = int(global_physics_tick_base)
+
+    def _contact_force_for_diagnostics(self) -> torch.Tensor:
+        sensor = self.scene["contact_forces"]
+        # ContactSensor caches a concatenated view per scene update.  Invalidate
+        # only in the explicitly enabled diagnostic path so pre/post sim.step
+        # probes read the current sensordata.
+        invalidate = getattr(sensor, "_invalidate_cache", None)
+        if callable(invalidate):
+            invalidate()
+        force = getattr(sensor.data, "force", None)
+        if force is None:
+            return torch.empty((self.num_envs, 0), device=self.device)
+        return force
+
+    def _nonfinite_diagnostic_tensors(
+        self, tensordict: TensorDictBase
+    ) -> OrderedDict[str, Any]:
+        asset_data = self.scene["robot"].data
+        return OrderedDict(
+            (
+                ("qpos", self.sim.data.qpos),
+                ("qvel", self.sim.data.qvel),
+                ("qacc", self.sim.data.qacc),
+                ("qacc_warmstart", self.sim.data.qacc_warmstart),
+                ("ctrl", self.sim.data.ctrl),
+                ("sensordata", self.sim.data.sensordata),
+                ("action", tensordict["action"]),
+                ("joint_target", asset_data.joint_pos_target),
+                ("actuator_force", asset_data.actuator_force),
+                ("contact_force", self._contact_force_for_diagnostics()),
+            )
+        )
+
+    def _finite_by_env(
+        self, fields: OrderedDict[str, Any]
+    ) -> OrderedDict[str, torch.Tensor]:
+        result = OrderedDict()
+        for name, value in fields.items():
+            if value.shape[0] != self.num_envs:
+                raise RuntimeError(
+                    f"diagnostic field {name} has leading shape {value.shape[0]}, "
+                    f"expected {self.num_envs}"
+                )
+            result[name] = torch.isfinite(value).reshape(self.num_envs, -1).all(1)
+        return result
+
+    def _all_finite_by_env(
+        self, fields: OrderedDict[str, Any]
+    ) -> torch.Tensor:
+        """Fast-path reduction; field-level reductions run only on rare events."""
+        flattened = [value.reshape(self.num_envs, -1) for value in fields.values()]
+        return torch.isfinite(torch.cat(flattened, dim=1)).all(1)
+
+    @staticmethod
+    def _safe_event_scalar(value: torch.Tensor) -> float | str | None:
+        if value.numel() != 1:
+            raise ValueError("event scalar helper requires exactly one value")
+        number = float(value.detach().item())
+        if number != number:
+            return "nan"
+        if number == float("inf"):
+            return "inf"
+        if number == float("-inf"):
+            return "-inf"
+        return number
+
+    @classmethod
+    def _safe_event_max_abs(cls, value: Any, env_id: int) -> float | str | None:
+        row = value[env_id].reshape(-1)
+        if row.numel() == 0:
+            return None
+        if bool(torch.isinf(row).any().item()):
+            return "inf"
+        if bool(torch.isnan(row).any().item()):
+            return "nan"
+        return cls._safe_event_scalar(row.abs().max())
+
+    @staticmethod
+    def _first_nonfinite_flat_index(value: Any, env_id: int) -> int | None:
+        bad = (~torch.isfinite(value[env_id].reshape(-1))).nonzero().reshape(-1)
+        return None if bad.numel() == 0 else int(bad[0].item())
+
+    def _motion_relative_path(self, source_path: str) -> str:
+        path = Path(str(source_path))
+        mem_root = os.environ.get("MEMPATH")
+        if path.is_absolute() and mem_root:
+            try:
+                return str(path.resolve().relative_to(Path(mem_root).resolve()))
+            except ValueError:
+                pass
+        return str(path)
+
+    def _make_nonfinite_events(
+        self,
+        *,
+        env_ids: torch.Tensor,
+        substep: int,
+        pre_fields: OrderedDict[str, Any],
+        pre_finite: OrderedDict[str, torch.Tensor],
+        post_fields: OrderedDict[str, Any] | None,
+        post_finite: OrderedDict[str, torch.Tensor] | None,
+        classification: str,
+        sim_step_executed: bool,
+    ) -> list[dict[str, Any]]:
+        from active_adaptation.utils.nonfinite_diagnostics import (
+            CORE_STATE_FIELDS,
+            NONFINITE_FIELD_ORDER,
+        )
+
+        command = self.command_manager
+        dataset = command.dataset
+        asset_data = self.scene["robot"].data
+        context_fields = post_fields if post_fields is not None else pre_fields
+        events = []
+        for env_tensor in env_ids:
+            env_id = int(env_tensor.item())
+            pre_status = {
+                name: bool(pre_finite[name][env_id].item())
+                for name in NONFINITE_FIELD_ORDER
+            }
+            post_status = (
+                None
+                if post_finite is None
+                else {
+                    name: bool(post_finite[name][env_id].item())
+                    for name in NONFINITE_FIELD_ORDER
+                }
+            )
+            pre_bad = [name for name in NONFINITE_FIELD_ORDER if not pre_status[name]]
+            post_bad = (
+                []
+                if post_status is None
+                else [name for name in NONFINITE_FIELD_ORDER if not post_status[name]]
+            )
+            nonfinite_fields = list(
+                dict.fromkeys([*pre_bad, *post_bad])
+            )
+            first_field = nonfinite_fields[0]
+            first_source = (
+                pre_fields
+                if first_field in pre_bad or post_fields is None
+                else post_fields
+            )
+
+            motion_id = int(dataset._motion_ids_A[env_id].item())
+            motion_frame = int(command.t[env_id].item())
+            qpos = context_fields["qpos"]
+            root_qpos = qpos[env_id, :7]
+            body_z = asset_data.body_link_pos_w[env_id, :, 2]
+            applied_action = self.action_manager.applied_action
+            event = {
+                "policy_iteration": self._nonfinite_policy_iteration,
+                "global_policy_frame": self._nonfinite_global_policy_frame,
+                "env_id": env_id,
+                "physics_substep": int(substep),
+                "global_physics_tick": (
+                    self._nonfinite_global_physics_tick_base + int(substep)
+                ),
+                "episode_length": int(self.episode_length_buf[env_id].item()),
+                "motion_id": motion_id,
+                "motion_label": dataset.motion_labels[motion_id],
+                "motion_relative_path": self._motion_relative_path(
+                    dataset.motion_source_paths[motion_id]
+                ),
+                "reference_motion_frame": motion_frame,
+                "command_time_s": motion_frame * float(self.step_dt),
+                "root_z": self._safe_event_scalar(root_qpos[2]),
+                "root_quaternion_norm": self._safe_event_scalar(
+                    torch.linalg.vector_norm(root_qpos[3:7])
+                ),
+                "minimum_body_z": self._safe_event_scalar(body_z.min()),
+                "raw_action_max_abs": self._safe_event_max_abs(
+                    context_fields["action"], env_id
+                ),
+                "applied_action_max_abs": self._safe_event_max_abs(
+                    applied_action, env_id
+                ),
+                "joint_target_max_abs": self._safe_event_max_abs(
+                    context_fields["joint_target"], env_id
+                ),
+                "ctrl_max_abs": self._safe_event_max_abs(
+                    context_fields["ctrl"], env_id
+                ),
+                "qpos_max_abs": self._safe_event_max_abs(qpos, env_id),
+                "qvel_max_abs": self._safe_event_max_abs(
+                    context_fields["qvel"], env_id
+                ),
+                "qacc_max_abs": self._safe_event_max_abs(
+                    context_fields["qacc"], env_id
+                ),
+                "qacc_warmstart_max_abs": self._safe_event_max_abs(
+                    context_fields["qacc_warmstart"], env_id
+                ),
+                "actuator_force_max_abs": self._safe_event_max_abs(
+                    context_fields["actuator_force"], env_id
+                ),
+                "contact_force_max_abs": self._safe_event_max_abs(
+                    context_fields["contact_force"], env_id
+                ),
+                "first_nonfinite_field": first_field,
+                "first_nonfinite_flat_index": self._first_nonfinite_flat_index(
+                    first_source[first_field], env_id
+                ),
+                "first_field_finite_before_sim_step": pre_status[first_field],
+                "first_field_finite_after_sim_step": (
+                    None if post_status is None else post_status[first_field]
+                ),
+                "all_fields_finite_before_sim_step": not pre_bad,
+                "all_fields_finite_after_sim_step": (
+                    None if post_status is None else not post_bad
+                ),
+                "pre_finite_by_field": pre_status,
+                "post_finite_by_field": post_status,
+                "pre_nonfinite_fields": pre_bad,
+                "post_nonfinite_fields": post_bad,
+                "nonfinite_fields": nonfinite_fields,
+                "classification": classification,
+                "sim_step_executed": bool(sim_step_executed),
+                "only_qacc_warmstart_nonfinite": (
+                    nonfinite_fields == ["qacc_warmstart"]
+                ),
+                "core_state_nonfinite": bool(
+                    CORE_STATE_FIELDS.intersection(nonfinite_fields)
+                ),
+            }
+            events.append(event)
+        return events
+
+    def _recover_nonfinite_envs(
+        self, env_ids: torch.Tensor, qpos_before: torch.Tensor
+    ) -> None:
+        """Restore only affected simulator rows to a finite state."""
+        self.sim.reset(env_ids)
+        qpos_is_finite = torch.isfinite(qpos_before[env_ids]).reshape(
+            env_ids.numel(), -1
+        ).all(1)
+        if bool(qpos_is_finite.any().item()):
+            restore_ids = env_ids[qpos_is_finite]
+            self.sim.data.qpos[restore_ids] = qpos_before[restore_ids]
+        self.sim.data.qvel[env_ids] = 0.0
+        self.scene.reset(env_ids)
+        self.sim.forward()
+        self.sim.sense()
+        self.sim.data.qacc[env_ids] = 0.0
+        self.sim.data.qacc_warmstart[env_ids] = 0.0
+        self.sim.data.sensordata[env_ids] = 0.0
+
     def _compute_observation(self, tensordict: TensorDictBase):
         try:
             for group_key, obs_group in self.observation_funcs.items():
                 obs_group.compute(tensordict, self.timestamp)
+                if self.recover_nonfinite_state:
+                    # Recovered rows are terminal and are not bootstrapped. Keep
+                    # their transient sensor/history values out of VecNorm.
+                    tensordict[group_key].masked_fill_(
+                        self._nonfinite_state_mask.unsqueeze(1), 0.0
+                    )
         except Exception as e:
             print(f"Error in computing observation for {group_key}: {e}")
             raise e
@@ -528,6 +847,10 @@ class _Env(EnvBase):
         rewards = []
         for group, reward_group in self.reward_groups.items():
             reward = reward_group.compute()
+            if self.recover_nonfinite_state:
+                reward = reward.masked_fill(
+                    self._nonfinite_state_mask.unsqueeze(1), 0.0
+                )
             if self.mult_dt:
                 reward *= self.step_dt
             rewards.append(reward)
@@ -559,7 +882,14 @@ class _Env(EnvBase):
         self.timestamp += 1
 
     def _update_sim(self, tensordict: TensorDictBase):
+        self._nonfinite_state_mask.zero_()
+        recorder = self.nonfinite_diagnostics
+        if recorder is not None:
+            recorder.note_policy_transition_batch()
         for substep in range(self.decimation):
+            if self.recover_nonfinite_state:
+                qpos_before = self.sim.data.qpos.clone()
+
             # take actions
             self.apply_action(tensordict, substep)
 
@@ -568,9 +898,98 @@ class _Env(EnvBase):
                 callback(substep)
 
             self.scene.write_data_to_sim()
+            if self.recover_nonfinite_state and self._nonfinite_state_mask.any():
+                self.sim.data.ctrl[self._nonfinite_state_mask] = 0.0
+
+            pre_fields = None
+            pre_finite = None
+            if recorder is not None:
+                pre_fields = self._nonfinite_diagnostic_tensors(tensordict)
+                pre_invalid = ~self._all_finite_by_env(pre_fields)
+                new_pre_invalid = pre_invalid & (~self._nonfinite_state_mask)
+                if bool(new_pre_invalid.any().item()):
+                    pre_finite = self._finite_by_env(pre_fields)
+                    env_ids = new_pre_invalid.nonzero().reshape(-1)
+                    self._nonfinite_state_mask.logical_or_(new_pre_invalid)
+                    self.nonfinite_state_recovery_count += int(env_ids.numel())
+                    events = self._make_nonfinite_events(
+                        env_ids=env_ids,
+                        substep=substep,
+                        pre_fields=pre_fields,
+                        pre_finite=pre_finite,
+                        post_fields=None,
+                        post_finite=None,
+                        classification="pre_step_nonfinite",
+                        sim_step_executed=False,
+                    )
+                    self._recover_nonfinite_envs(env_ids, qpos_before)
+                    recorder.record_events(events)
+                    recorder.raise_if_aborted()
+                    # The actual simulator call sees the recovered finite rows.
+                    pre_fields = self._nonfinite_diagnostic_tensors(tensordict)
+                # Any post-step event is, by construction, new in an env whose
+                # complete pre-step field set passed this check.
+                pre_finite = OrderedDict(
+                    (
+                        name,
+                        torch.ones(
+                            self.num_envs, dtype=torch.bool, device=self.device
+                        ),
+                    )
+                    for name in pre_fields
+                )
 
             # run simulation
             self.sim.step()
+
+            if recorder is not None:
+                recorder.note_physics_substep_batch()
+
+            if self.recover_nonfinite_state:
+                post_fields = None
+                post_finite = None
+                if recorder is not None:
+                    post_fields = self._nonfinite_diagnostic_tensors(tensordict)
+                    invalid = ~self._all_finite_by_env(post_fields)
+                else:
+                    invalid = torch.zeros_like(self._nonfinite_state_mask)
+                    for state in (
+                        self.sim.data.qpos,
+                        self.sim.data.qvel,
+                        self.sim.data.qacc,
+                        self.sim.data.qacc_warmstart,
+                    ):
+                        invalid.logical_or_(
+                            ~torch.isfinite(state)
+                            .reshape(self.num_envs, -1)
+                            .all(dim=1)
+                        )
+                new_invalid = invalid & (~self._nonfinite_state_mask)
+                if bool(invalid.any().item()):
+                    env_ids = invalid.nonzero().reshape(-1)
+                    events = None
+                    if bool(new_invalid.any().item()):
+                        new_env_ids = new_invalid.nonzero().reshape(-1)
+                        self._nonfinite_state_mask.logical_or_(new_invalid)
+                        self.nonfinite_state_recovery_count += int(
+                            new_env_ids.numel()
+                        )
+                    if recorder is not None and bool(new_invalid.any().item()):
+                        post_finite = self._finite_by_env(post_fields)
+                        events = self._make_nonfinite_events(
+                            env_ids=new_env_ids,
+                            substep=substep,
+                            pre_fields=pre_fields,
+                            pre_finite=pre_finite,
+                            post_fields=post_fields,
+                            post_finite=post_finite,
+                            classification="post_step_new_nonfinite",
+                            sim_step_executed=True,
+                        )
+                    self._recover_nonfinite_envs(env_ids, qpos_before)
+                    if recorder is not None and events is not None:
+                        recorder.record_events(events)
+                        recorder.raise_if_aborted()
 
             # update buffer
             self.scene.update(self.physics_dt)
@@ -601,10 +1020,24 @@ class _Env(EnvBase):
 
         # update observation
         self._compute_observation(tensordict)
+        if self.recover_nonfinite_state:
+            # SymmetricVecNorm consumes this internal key to exclude recovered
+            # rows from running moments while still returning a finite terminal
+            # observation for the transition.
+            tensordict.set(
+                "_vecnorm_valid", (~self._nonfinite_state_mask).unsqueeze(1)
+            )
 
         # update termination
         terminated, truncated = self._compute_termination()
-        terminated = terminated & (self.episode_length_buf > 5).unsqueeze(1) # do not terminate in the first 5 steps
+        # Ordinary termination signals keep the startup grace period. A recovered
+        # non-finite simulator state must terminate immediately so it cannot be
+        # carried into the next policy step or observation-normalizer update.
+        terminated = apply_termination_grace_and_recovery(
+            terminated,
+            self.episode_length_buf,
+            self._nonfinite_state_mask,
+        )
         tensordict.set("terminated", terminated)
         tensordict.set("truncated", truncated)
         tensordict.set("done", terminated | truncated)

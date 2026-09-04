@@ -6,6 +6,7 @@ from active_adaptation.utils.ppo_smoke import (
     gradient_report,
     parameter_delta,
     state_key_report,
+    validate_pilot_schedule,
     validate_smoke_schedule,
 )
 
@@ -31,6 +32,19 @@ class PPOSmokeDiagnosticsTest(unittest.TestCase):
                 num_minibatches=2,
                 total_frames=1040,
             )
+
+    def test_formal_pilot_schedule_keeps_production_rollout_and_minibatches(self):
+        schedule = validate_pilot_schedule(
+            num_envs=256,
+            rollout_horizon=32,
+            num_minibatches=8,
+            total_frames=256 * 32 * 20,
+            target_rollout_updates=20,
+        )
+        self.assertEqual(schedule["batch_size"], 8192)
+        self.assertEqual(schedule["minibatch_size"], 1024)
+        self.assertEqual(schedule["estimator_sequences_per_minibatch"], 32)
+        self.assertEqual(schedule["rollout_updates"], 20)
 
     def test_parameter_gradient_and_state_reports(self):
         module = torch.nn.Linear(3, 2)

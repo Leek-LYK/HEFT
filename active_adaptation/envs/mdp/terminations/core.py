@@ -28,3 +28,10 @@ class fall_over(Termination):
 class episode_timeout(Termination):
     def __call__(self) -> torch.Tensor:
         return (self.env.episode_length_buf >= self.env.max_episode_length).unsqueeze(1)
+
+
+class nonfinite_state(Termination):
+    """Terminate an environment whose simulator state required finite-state recovery."""
+
+    def __call__(self) -> torch.Tensor:
+        return self.env._nonfinite_state_mask.unsqueeze(1)

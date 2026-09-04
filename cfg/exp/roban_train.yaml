@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - /exp/train@_global_
+  - override /task/profile: Roban_tracking
+  - _self_
+
+# Roban policy joints do not use the G1 anatomical names from exp/train.
+algo:
+  init_noise_scale_overrides: ${task.profile.policy.init_noise_scale_overrides}
+
+task:
+  recover_nonfinite_state: true
+  termination:
+    nonfinite_state: {}

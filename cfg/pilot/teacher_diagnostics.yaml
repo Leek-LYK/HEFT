@@ -1,0 +1,22 @@
+# Opt-in Teacher stability diagnostics.  This config is never included by the
+# formal G1/L7/Roban experiment defaults; use ``+pilot=teacher_diagnostics``.
+enabled: true
+output_dir: null
+target_rollout_iterations: 200
+expected_num_envs: 256
+dataset_mem_path: _smoke/roban/main_subset
+allow_teacher_resume: true
+preserve_checkpoint_schedule_progress: true
+rollout_offset: 0
+global_policy_frame_offset: 0
+checkpoint_interval: 50
+
+nonfinite_diagnostics:
+  enabled: true
+  detailed_event_limit: 200
+  rate_min_policy_transitions: 100000
+  max_event_rate: 1.0e-4
+  max_motion_frame_repeats: 10
+  max_events_per_iteration: 20
+  initial_summary_path: null
+  initial_events_path: null

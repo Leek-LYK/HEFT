@@ -44,7 +44,26 @@ def main(cfg: DictConfig):
     OmegaConf.resolve(cfg)
     OmegaConf.set_struct(cfg, False)
     smoke_enabled = bool(cfg.get("smoke", {}).get("enabled", False))
-    if smoke_enabled and torch.cuda.is_available():
+    pilot_enabled = bool(cfg.get("pilot", {}).get("enabled", False))
+    if smoke_enabled and pilot_enabled:
+        raise ValueError("smoke and pilot diagnostics cannot be enabled together")
+    diagnostics_enabled = smoke_enabled or pilot_enabled
+    pilot_cfg = cfg.get("pilot", {})
+    nonfinite_cfg = pilot_cfg.get("nonfinite_diagnostics", {})
+    if bool(nonfinite_cfg.get("enabled", False)):
+        if not pilot_enabled:
+            raise ValueError("event-level nonfinite diagnostics are pilot-only")
+        if not bool(cfg.task.get("recover_nonfinite_state", False)):
+            raise ValueError(
+                "event-level nonfinite diagnostics require recovery to be enabled"
+            )
+        if not pilot_cfg.get("output_dir", None):
+            raise ValueError("pilot.output_dir is required")
+        cfg.task.nonfinite_diagnostics = OmegaConf.create(
+            OmegaConf.to_container(nonfinite_cfg, resolve=True)
+        )
+        cfg.task.nonfinite_diagnostics.output_dir = str(pilot_cfg.output_dir)
+    if diagnostics_enabled and torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
     
     print(f"is_distributed: {aa.is_distributed()}, local_rank: {aa.get_local_rank()}/{aa.get_world_size()}")
@@ -57,6 +76,7 @@ def main(cfg: DictConfig):
         cfg.seed = cfg.seed + aa.get_local_rank() * 10000
 
     env, policy, vecnorm, primer = make_env_policy(cfg)
+    initial_schedule_progress = float(getattr(policy, "progress", 0.0))
 
     frames_per_batch = env.num_envs * cfg.algo.train_every
     total_frames = cfg.get("total_frames", -1) // aa.get_world_size()
@@ -64,15 +84,16 @@ def main(cfg: DictConfig):
     total_iters = total_frames // frames_per_batch
     save_interval = cfg.get("save_interval", -1)
     start_iter = cfg.get("start_iter", 0)
-    smoke = None
-    if smoke_enabled:
+    diagnostics = None
+    if diagnostics_enabled:
         from active_adaptation.utils.ppo_smoke import PPOSmokeDiagnostics
-        smoke = PPOSmokeDiagnostics(
+        diagnostics = PPOSmokeDiagnostics(
             cfg,
             env,
             policy,
             vecnorm,
             total_iters=total_iters,
+            audit_kind="pilot" if pilot_enabled else "smoke",
         )
     need_logging = aa.is_main_process() and cfg.wandb.get("mode", "disabled") != "disabled"
     if need_logging:
@@ -124,10 +145,20 @@ def main(cfg: DictConfig):
             return i > 0 and i % save_interval == 0
     
     rollout_policy = policy.get_rollout_policy("train")
+    preserve_pilot_progress = bool(
+        pilot_enabled
+        and cfg.checkpoint_path is not None
+        and pilot_cfg.get("preserve_checkpoint_schedule_progress", True)
+    )
+    if preserve_pilot_progress:
+        if hasattr(policy, "step_schedule"):
+            policy.step_schedule(initial_schedule_progress, -1)
+        if hasattr(env, "step_schedule"):
+            env.step_schedule(initial_schedule_progress, -1)
     env_frames = 0
     carry = env.reset()
-    if smoke is not None:
-        smoke.on_reset(carry)
+    if diagnostics is not None:
+        diagnostics.on_reset(carry)
 
     assert env.training
     iter_range = range(start_iter, total_iters)
@@ -158,67 +189,83 @@ def main(cfg: DictConfig):
         )
 
     for i in progress:
-        start = time.perf_counter()
-        if train_recorder is not None:
-            train_recorder.maybe_start(i)
+        try:
+            start = time.perf_counter()
+            if train_recorder is not None:
+                train_recorder.maybe_start(i)
 
-        with torch.inference_mode(), set_exploration_type(ExplorationType.RANDOM):
-            torch.compiler.cudagraph_mark_step_begin() # for compiled policy
-            for t in range(cfg.algo.train_every):
-                carry = rollout_policy(carry)
+            with torch.inference_mode(), set_exploration_type(ExplorationType.RANDOM):
+                torch.compiler.cudagraph_mark_step_begin() # for compiled policy
+                for t in range(cfg.algo.train_every):
+                    if diagnostics is not None:
+                        diagnostics.before_transition(iteration=i, rollout_step=t)
+                    carry = rollout_policy(carry)
 
-                td, carry = env.step_and_maybe_reset(carry)
-                if train_recorder is not None:
-                    rollout_step = i * cfg.algo.train_every + t
-                    train_recorder.on_step(i, rollout_step)
+                    td, carry = env.step_and_maybe_reset(carry)
+                    if train_recorder is not None:
+                        rollout_step = i * cfg.algo.train_every + t
+                        train_recorder.on_step(i, rollout_step)
 
-                # deal with value
-                policy.critic(td)
-                policy.critic(td["next"])
-                td.get(("next", "state_value"))[:] = torch.where(
-                    td["next", "done"], 
-                    td["state_value"],
-                    td["next", "state_value"]
+                    # deal with value
+                    policy.critic(td)
+                    policy.critic(td["next"])
+                    td.get(("next", "state_value"))[:] = torch.where(
+                        td["next", "done"],
+                        td["state_value"],
+                        td["next", "state_value"]
+                    )
+
+                    if diagnostics is not None:
+                        diagnostics.observe_transition(td, iteration=i, rollout_step=t)
+
+                    # clean up tensordict
+                    td["next"] = td["next"].select("reward", "done", "terminated", "state_value", "stats", strict=False)
+                    td = td.select(
+                        "policy",
+                        "priv",
+                        "priv_critic",
+                        "action",
+                        "action_log_prob",
+                        "loc",
+                        "scale",
+                        "is_init",
+                        "state_value",
+                        "next",
+                        strict=False,
+                    )
+
+                    data_buf.write_step(t, td)
+
+                data = data_buf.td
+
+            rollout_time = time.perf_counter() - start
+            training_start = time.perf_counter()
+
+            progress_ratio = i / total_iters
+            if preserve_pilot_progress:
+                progress_ratio = max(initial_schedule_progress, progress_ratio)
+            if hasattr(policy, "step_schedule"):
+                policy.step_schedule(progress_ratio, i)
+            if hasattr(env, "step_schedule"):
+                env.step_schedule(progress_ratio, i)
+
+            if diagnostics is not None:
+                diagnostics.before_update(data, iteration=i)
+            train_carry = policy.train_op(data, vecnorm)
+            training_time = time.perf_counter() - training_start
+            if diagnostics is not None:
+                diagnostics.after_update(
+                    data,
+                    train_carry,
+                    iteration=i,
+                    rollout_time=rollout_time,
+                    training_time=training_time,
                 )
-
-                if smoke is not None:
-                    smoke.observe_transition(td, iteration=i, rollout_step=t)
-
-                # clean up tensordict
-                td["next"] = td["next"].select("reward", "done", "terminated", "state_value", "stats", strict=False)
-                td = td.select(
-                    "policy",
-                    "priv",
-                    "priv_critic",
-                    "action",
-                    "action_log_prob",
-                    "loc",
-                    "scale",
-                    "is_init",
-                    "state_value",
-                    "next",
-                    strict=False,
-                )
-
-                data_buf.write_step(t, td)
-
-            data = data_buf.td
-
-        rollout_time = time.perf_counter() - start
-        training_start = time.perf_counter()
-
-        progress_ratio = i / total_iters
-        if hasattr(policy, "step_schedule"):
-            policy.step_schedule(progress_ratio, i)
-        if hasattr(env, "step_schedule"):
-            env.step_schedule(progress_ratio, i)
-
-        if smoke is not None:
-            smoke.before_update(data, iteration=i)
-        train_carry = policy.train_op(data, vecnorm)
-        if smoke is not None:
-            smoke.after_update(data, train_carry, iteration=i)
-        training_time = time.perf_counter() - training_start
+        except BaseException as error:
+            if diagnostics is not None:
+                diagnostics.abort(error)
+            env.close(raise_if_closed=False)
+            raise
 
         if need_logging:
             info = {}
@@ -244,8 +291,13 @@ def main(cfg: DictConfig):
             run.log(info, step=i)
             print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, (float, int))}))
     
-    if smoke is not None:
-        smoke.finalize()
+    if diagnostics is not None:
+        try:
+            diagnostics.finalize()
+        except BaseException as error:
+            diagnostics.abort(error)
+            env.close(raise_if_closed=False)
+            raise
         env.close(raise_if_closed=False)
 
     if aa.is_main_process():
