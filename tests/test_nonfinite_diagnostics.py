@@ -230,3 +230,20 @@ def test_vecnorm_excludes_only_recovered_rows_from_running_moments():
     normal = MaskedVecNorm(["obs"], decay=1.0)
     normal(TensorDict({"obs": torch.tensor([[1.0], [3.0]])}, batch_size=[2]))
     assert normal.loc["obs"].item() == pytest.approx(2.0)
+
+
+def test_vecnorm_nan_in_recovered_row_cannot_poison_running_moments():
+    masked = MaskedVecNorm(["obs"], decay=1.0)
+    td = TensorDict(
+        {
+            "obs": torch.tensor([[1.0], [float("nan")]]),
+            "_vecnorm_valid": torch.tensor([[True], [False]]),
+        },
+        batch_size=[2],
+    )
+    result = masked(td)
+    assert torch.isfinite(masked.loc["obs"]).all()
+    assert masked.loc["obs"].item() == pytest.approx(1.0)
+    # The environment path overwrites recovered observations with zero before
+    # VecNorm; this direct transform test only asserts that statistics stay safe.
+    assert torch.isfinite(result["obs"][0]).all()

@@ -113,7 +113,25 @@ class MaskedVecNorm(VecNorm):
             self.valid_mask_key, None
         )
         try:
-            return super()._call(next_tensordict)
+            # Validate before touching ANY running moments. A single unmarked
+            # bad row would otherwise contaminate all environments/ranks.
+            for key in self.in_keys:
+                value = next_tensordict.get(key, None)
+                if value is None:
+                    continue
+                valid = self._active_valid_mask
+                if valid is not None and value.shape[0] == valid.numel():
+                    valid = valid.reshape(valid.numel(), *([1] * (value.ndim - 1)))
+                    value = torch.where(valid, value, 0.0)
+                    next_tensordict.set(key, value)
+                if not bool(torch.isfinite(value).all().item()):
+                    raise FloatingPointError(f"nonfinite input to VecNorm: {key}")
+            result = super()._call(next_tensordict)
+            for key in self.out_keys:
+                value = result.get(key, None)
+                if value is not None and not bool(torch.isfinite(value).all().item()):
+                    raise FloatingPointError(f"nonfinite output from VecNorm: {key}")
+            return result
         finally:
             self._active_valid_mask = None
 
@@ -124,14 +142,18 @@ class MaskedVecNorm(VecNorm):
         if valid is None or value.ndim == 0 or value.shape[0] != valid.numel():
             value_sum = _sum_left(value, reference)
             value_ssq = _sum_left(value.pow(2), reference)
-            count = N
+            count = torch.as_tensor(N, device=value.device, dtype=reference.dtype)
         else:
-            weights = valid.reshape(
+            valid = valid.reshape(
                 valid.numel(), *([1] * (value.ndim - 1))
-            ).to(dtype=value.dtype)
-            value_sum = _sum_left(value * weights, reference)
-            value_ssq = _sum_left(value.pow(2) * weights, reference)
-            count = weights.reshape(valid.numel(), -1)[:, 0].sum()
+            ).bool()
+            # Multiplication cannot mask NaN (`NaN * 0 == NaN`). Select finite
+            # rows before computing moments so a recovered simulator row cannot
+            # contaminate every environment through the normalizer.
+            masked_value = torch.where(valid, value, torch.zeros_like(value))
+            value_sum = _sum_left(masked_value, reference)
+            value_ssq = _sum_left(masked_value.square(), reference)
+            count = valid.reshape(valid.shape[0], -1)[:, 0].sum().to(reference.dtype)
         return value_sum, value_ssq, count
 
     def _update(self, key, value, N) -> torch.Tensor:

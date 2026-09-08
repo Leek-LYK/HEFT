@@ -33,6 +33,32 @@ import active_adaptation as aa
 __all__ = ["PPOPolicy", "PPOConfig"]
 
 
+@torch.no_grad()
+def synchronize_vecnorm(vecnorm) -> None:
+    """Average VecNorm sufficient statistics at a fixed DDP boundary.
+
+    VecNorm is invoked from environment reset paths whose control flow differs
+    by rank, so collectives inside the transform can deadlock. Every rank calls
+    this function exactly once at the start of ``train_op`` instead.
+    """
+    if not (dist.is_available() and dist.is_initialized()):
+        return
+    stats = getattr(vecnorm, "_td", None)
+    if stats is None:
+        raise RuntimeError("VecNorm does not expose its running-stat TensorDict")
+    world_size = dist.get_world_size()
+    keys = sorted(stats.keys(True, True), key=str)
+    for key in keys:
+        value = stats.get(key)
+        if not isinstance(value, torch.Tensor):
+            continue
+        if value.is_floating_point() or value.is_complex():
+            dist.all_reduce(value, op=dist.ReduceOp.SUM)
+            value.div_(world_size)
+        else:
+            dist.broadcast(value, src=0)
+
+
 def _schedule_value(schedule: Any, progress: float) -> float:
     if isinstance(schedule, (int, float)):
         return float(schedule)
@@ -268,6 +294,7 @@ class PPOPolicy(TensorDictModuleBase):
 
         self.world_size = 1
         self.num_updates = 0
+        self._ddp_updates_since_init = 0
         if aa.is_distributed():
             self.world_size = aa.get_world_size()
             self._wrap_ddp(local_rank=aa.get_local_rank())
@@ -339,16 +366,116 @@ class PPOPolicy(TensorDictModuleBase):
 
     def broadcast_parameters(self, extra_modules=[]):
         info = {}
-        if self.num_updates % 32 == 0:
-            update_list = [self.value_norm] + extra_modules
-            if aa.is_distributed():
-                info.update(self._ddp_param_consistency_info())
-                for m in update_list:
-                    for p in m.parameters():
-                        dist.broadcast(p, src=0)
-                    for p in m.buffers():
-                        dist.broadcast(p, src=0)
+        if aa.is_distributed() and (
+            self._ddp_updates_since_init == 0
+            or self._ddp_updates_since_init == 1
+            or self._ddp_updates_since_init % 25 == 0
+        ):
+            # DDP is the source of truth for trainable parameters. Silently
+            # overwriting divergent ranks would hide a broken all-reduce, so
+            # verify and fail instead. VecNorm and ValueNorm use global
+            # sufficient statistics at every update and are checked here too.
+            info.update(self._ddp_param_consistency_info())
+            info.update(
+                self._ddp_state_consistency_info(
+                    {"value_norm": self.value_norm, **{
+                        f"extra_{index}": module
+                        for index, module in enumerate(extra_modules)
+                    }}
+                )
+            )
+            max_gap = max(
+                float(info.get("ddp_param/max_gap", 0.0)),
+                float(info.get("ddp_state/max_gap", 0.0)),
+            )
+            if max_gap != 0.0:
+                raise RuntimeError(f"DDP state diverged across ranks: max_gap={max_gap}")
         return info
+
+    def _ddp_state_consistency_info(
+        self, modules: dict[str, nn.Module]
+    ) -> dict[str, float]:
+        if not aa.is_distributed():
+            return {}
+        info: dict[str, float] = {}
+        max_gap = 0.0
+        for module_name, module in modules.items():
+            signature = torch.zeros(3, device=self.device, dtype=torch.float64)
+            tensor_count = 0
+            pending = list(module.state_dict().values())
+            while pending:
+                value = pending.pop()
+                if isinstance(value, torch.Tensor):
+                    if not value.numel():
+                        continue
+                elif isinstance(value, dict) or hasattr(value, "items"):
+                    pending.extend(item for _, item in value.items())
+                    continue
+                elif isinstance(value, (list, tuple)):
+                    pending.extend(value)
+                    continue
+                else:
+                    continue
+                tensor_count += 1
+                data = value.detach().reshape(-1).to(
+                    device=self.device, dtype=torch.float64
+                )
+                signature[0] += data.sum()
+                signature[1] += data.square().sum()
+                signature[2] = torch.maximum(signature[2], data.abs().max())
+            sig_max = signature.clone()
+            sig_min = signature.clone()
+            dist.all_reduce(sig_max, op=dist.ReduceOp.MAX)
+            dist.all_reduce(sig_min, op=dist.ReduceOp.MIN)
+            gap = float((sig_max - sig_min).abs().max().item())
+            info[f"ddp_state/{module_name}_max_gap"] = gap
+            info[f"ddp_state/{module_name}_tensor_count"] = float(tensor_count)
+            max_gap = max(max_gap, gap)
+        info["ddp_state/max_gap"] = max_gap
+        return info
+
+    def _distributed_mean_metrics(self, info: dict[str, Any]) -> dict[str, Any]:
+        if not aa.is_distributed():
+            return info
+        reduced: dict[str, Any] = {}
+        for name in sorted(info):
+            value = info[name]
+            if isinstance(value, torch.Tensor):
+                if value.numel() != 1:
+                    raise ValueError(f"distributed metric {name!r} is not scalar")
+                tensor = value.detach().to(device=self.device, dtype=torch.float64)
+            elif isinstance(value, (float, int)):
+                tensor = torch.tensor(float(value), device=self.device, dtype=torch.float64)
+            else:
+                raise TypeError(
+                    f"distributed metric {name!r} has unsupported type {type(value)}"
+                )
+            dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+            reduced[name] = float((tensor / self.world_size).item())
+        return reduced
+
+    def _require_all_ranks_finite(self, label: str, value: torch.Tensor) -> None:
+        local_finite = torch.isfinite(value).all().to(
+            device=self.device, dtype=torch.int32
+        )
+        if aa.is_distributed():
+            dist.all_reduce(local_finite, op=dist.ReduceOp.MIN)
+        if not bool(local_finite.item()):
+            raise FloatingPointError(f"non-finite {label} on at least one rank")
+
+    def _require_finite_gradients(self, label: str, modules: list[nn.Module]) -> None:
+        local_finite = torch.ones((), device=self.device, dtype=torch.int32)
+        for module in modules:
+            for parameter in module.parameters():
+                if parameter.grad is not None and not torch.isfinite(parameter.grad).all():
+                    local_finite.zero_()
+                    break
+            if not bool(local_finite.item()):
+                break
+        if aa.is_distributed():
+            dist.all_reduce(local_finite, op=dist.ReduceOp.MIN)
+        if not bool(local_finite.item()):
+            raise FloatingPointError(f"non-finite {label} gradient on at least one rank")
 
     @staticmethod
     def _param_signature(module: nn.Module, device: str) -> torch.Tensor:
@@ -506,6 +633,7 @@ class PPOPolicy(TensorDictModuleBase):
     # ------------------------------------------------------------------------------------------ #
     def train_op(self, td: TensorDict, vecnorm):
         """One optimisation step on a batched rollout tensor-dict."""
+        synchronize_vecnorm(vecnorm)
         info = {}
         if self.cfg.phase == "train":
             info.update(self._train_ppo(td, mode="teacher"))
@@ -514,7 +642,9 @@ class PPOPolicy(TensorDictModuleBase):
             info.update(self._train_ppo(td, mode="student"))
         else:  # adapt
             info.update(self._train_estimator(td))
+        info = self._distributed_mean_metrics(info)
         self.num_updates += 1
+        self._ddp_updates_since_init += 1
         info.update(self.broadcast_parameters(extra_modules=[vecnorm]))
         return info
 
@@ -558,6 +688,11 @@ class PPOPolicy(TensorDictModuleBase):
             info["actor_std/mean"] = action_std.mean()
 
         kl = info["actor/kl"]
+        if aa.is_distributed():
+            kl_tensor = torch.tensor(kl, device=self.device, dtype=torch.float64)
+            dist.all_reduce(kl_tensor, op=dist.ReduceOp.SUM)
+            kl = float((kl_tensor / self.world_size).item())
+            info["actor/kl"] = kl
         kl_upper, kl_lower, kl_schedule_progress = self.do_lr_schedule(kl)
         lrs = self.get_lr()
         info["lr"] = lrs["actor"]
@@ -645,7 +780,12 @@ class PPOPolicy(TensorDictModuleBase):
         opt_actor.zero_grad()
         self.opt_critic.zero_grad()
 
+        self._require_all_ranks_finite("PPO loss", loss)
         loss.backward()
+        grad_modules = [actor, self.critic]
+        if update_encoder and encoder is not None:
+            grad_modules.append(encoder)
+        self._require_finite_gradients("PPO", grad_modules)
 
         if update_encoder and encoder is not None:
             encoder_grad_norm = nn.utils.clip_grad_norm_(encoder.parameters(), 1.0)
@@ -724,7 +864,11 @@ class PPOPolicy(TensorDictModuleBase):
                 )
 
                 self.opt_estimator.zero_grad()
+                self._require_all_ranks_finite("estimator loss", loss)
                 loss.backward()
+                self._require_finite_gradients(
+                    "estimator", [self.adapt_module]
+                )
                 self.opt_estimator.step()
 
                 infos.append(TensorDict({"adapt/estimator_loss": loss.detach()}, []))

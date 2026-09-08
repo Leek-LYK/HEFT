@@ -25,6 +25,7 @@ from typing import Iterable, Union
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
 
 
 class Normalizer(nn.Module):
@@ -81,8 +82,19 @@ class ValueNorm1(Normalizer):
     def update(self, input_vector: torch.Tensor):
         assert input_vector.shape[-len(self.input_shape) :] == self.input_shape
         dim = tuple(range(input_vector.dim() - len(self.input_shape)))
-        batch_mean = input_vector.mean(dim=dim)
-        batch_sq_mean = (input_vector**2).mean(dim=dim)
+        batch_sum = input_vector.sum(dim=dim)
+        batch_sq_sum = (input_vector**2).sum(dim=dim)
+        batch_count = torch.tensor(
+            input_vector.shape[: -len(self.input_shape)].numel(),
+            device=input_vector.device,
+            dtype=batch_sum.dtype,
+        )
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(batch_sum, op=dist.ReduceOp.SUM)
+            dist.all_reduce(batch_sq_sum, op=dist.ReduceOp.SUM)
+            dist.all_reduce(batch_count, op=dist.ReduceOp.SUM)
+        batch_mean = batch_sum / batch_count.clamp_min(1)
+        batch_sq_mean = batch_sq_sum / batch_count.clamp_min(1)
 
         weight = self.beta
 
@@ -174,4 +186,3 @@ class ValueNormFake(Normalizer):
     
     def denormalize(self, input_vector: torch.Tensor):
         return input_vector
-

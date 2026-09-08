@@ -583,7 +583,7 @@ class _Env(EnvBase):
     def _contact_force_for_diagnostics(self) -> torch.Tensor:
         sensor = self.scene["contact_forces"]
         # ContactSensor caches a concatenated view per scene update.  Invalidate
-        # only in the explicitly enabled diagnostic path so pre/post sim.step
+        # before boundary checks so pre/post sim.step
         # probes read the current sensordata.
         invalidate = getattr(sensor, "_invalidate_cache", None)
         if callable(invalidate):
@@ -810,21 +810,65 @@ class _Env(EnvBase):
     def _recover_nonfinite_envs(
         self, env_ids: torch.Tensor, qpos_before: torch.Tensor
     ) -> None:
-        """Restore only affected simulator rows to a finite state."""
-        self.sim.reset(env_ids)
-        qpos_is_finite = torch.isfinite(qpos_before[env_ids]).reshape(
-            env_ids.numel(), -1
-        ).all(1)
-        if bool(qpos_is_finite.any().item()):
-            restore_ids = env_ids[qpos_is_finite]
-            self.sim.data.qpos[restore_ids] = qpos_before[restore_ids]
-        self.sim.data.qvel[env_ids] = 0.0
-        self.scene.reset(env_ids)
-        self.sim.forward()
-        self.sim.sense()
-        self.sim.data.qacc[env_ids] = 0.0
-        self.sim.data.qacc_warmstart[env_ids] = 0.0
-        self.sim.data.sensordata[env_ids] = 0.0
+        """Recover rows, including new failures from the global forward/sense.
+
+        forward() and sense() recompute ALL worlds, not just env_ids. A second
+        world can therefore become invalid during the recovery itself. Validate
+        again before any sensor history callback consumes those buffers.
+        """
+        for attempt in range(4):
+            self.sim.reset(env_ids)
+            qpos_is_finite = torch.isfinite(qpos_before[env_ids]).reshape(
+                env_ids.numel(), -1
+            ).all(1)
+            if bool(qpos_is_finite.any().item()):
+                restore_ids = env_ids[qpos_is_finite]
+                self.sim.data.qpos[restore_ids] = qpos_before[restore_ids]
+            self.sim.data.qvel[env_ids] = 0.0
+            self.scene.reset(env_ids)
+            self.sim.forward()
+            self.sim.sense()
+            # Refresh may also regenerate scratch NaNs in rows recovered in a
+            # previous pass/substep. They stay quarantined for this transition.
+            quarantined = self._nonfinite_state_mask.nonzero().reshape(-1)
+            self.sim.data.qacc[quarantined] = 0.0
+            self.sim.data.qacc_warmstart[quarantined] = 0.0
+            self.sim.data.sensordata[quarantined] = 0.0
+            fields = self._nonfinite_diagnostic_tensors(self.input_tensordict)
+            invalid = ~self._all_finite_by_env(fields)
+            if not bool(invalid.any().item()):
+                return
+            bad_controls = [
+                name for name in ("action", "joint_target", "ctrl")
+                if name in fields and not bool(torch.isfinite(fields[name]).all().item())
+            ]
+            if bad_controls:
+                raise FloatingPointError(f"nonfinite control during recovery: {bad_controls}")
+            new_invalid = invalid & ~self._nonfinite_state_mask
+            if bool(new_invalid.any().item()):
+                new_ids = new_invalid.nonzero().reshape(-1)
+                self._nonfinite_state_mask.logical_or_(new_invalid)
+                self.nonfinite_state_recovery_count += int(new_ids.numel())
+                previous_count = getattr(self, "nonfinite_refresh_recovery_count", 0)
+                self.nonfinite_refresh_recovery_count = previous_count + int(new_ids.numel())
+                if previous_count < 10 or previous_count // 1000 != self.nonfinite_refresh_recovery_count // 1000:
+                    print(
+                        f"[nonfinite recovery] global refresh recovery total="
+                        f"{self.nonfinite_refresh_recovery_count}, timestamp={self.timestamp}",
+                        flush=True,
+                    )
+                if self.nonfinite_diagnostics is not None:
+                    finite = self._finite_by_env(fields)
+                    events = self._make_nonfinite_events(
+                        env_ids=new_ids, substep=self.decimation,
+                        pre_fields=fields, pre_finite=finite,
+                        post_fields=None, post_finite=None,
+                        classification="recovery_refresh_nonfinite", sim_step_executed=False,
+                    )
+                    self.nonfinite_diagnostics.record_events(events)
+                    self.nonfinite_diagnostics.raise_if_aborted()
+            env_ids = invalid.nonzero().reshape(-1)
+        raise FloatingPointError("simulator recovery did not reach a finite boundary after 4 attempts")
 
     def _compute_observation(self, tensordict: TensorDictBase):
         try:
@@ -836,6 +880,17 @@ class _Env(EnvBase):
                     tensordict[group_key].masked_fill_(
                         self._nonfinite_state_mask.unsqueeze(1), 0.0
                     )
+                    if not bool(torch.isfinite(tensordict[group_key]).all().item()):
+                        bad = (~torch.isfinite(tensordict[group_key])).nonzero()
+                        components = [
+                            name for name, func in obs_group.funcs.items()
+                            if not bool(torch.isfinite(func()).all().item())
+                        ]
+                        raise FloatingPointError(
+                            f"raw observation nonfinite before VecNorm: group={group_key}, "
+                            f"timestamp={self.timestamp}, indices={bad[:20].tolist()}, "
+                            f"components={components}"
+                        )
         except Exception as e:
             print(f"Error in computing observation for {group_key}: {e}")
             raise e
@@ -901,9 +956,29 @@ class _Env(EnvBase):
             if self.recover_nonfinite_state and self._nonfinite_state_mask.any():
                 self.sim.data.ctrl[self._nonfinite_state_mask] = 0.0
 
+            if self.recover_nonfinite_state:
+                # The long-running production path does not enable the verbose
+                # event recorder. Action/target/ctrl are still hard failures:
+                # recovering them would conceal a policy or control bug.
+                hard_boundary_fields = {
+                    "action": tensordict["action"],
+                    "joint_target": self.scene["robot"].data.joint_pos_target,
+                    "ctrl": self.sim.data.ctrl,
+                }
+                bad_hard_fields = [
+                    name
+                    for name, value in hard_boundary_fields.items()
+                    if not bool(torch.isfinite(value).all().item())
+                ]
+                if bad_hard_fields:
+                    raise FloatingPointError(
+                        "non-finite pre-step control tensor(s): "
+                        + ", ".join(bad_hard_fields)
+                    )
+
             pre_fields = None
             pre_finite = None
-            if recorder is not None:
+            if self.recover_nonfinite_state:
                 pre_fields = self._nonfinite_diagnostic_tensors(tensordict)
                 pre_invalid = ~self._all_finite_by_env(pre_fields)
                 new_pre_invalid = pre_invalid & (~self._nonfinite_state_mask)
@@ -921,10 +996,11 @@ class _Env(EnvBase):
                         post_finite=None,
                         classification="pre_step_nonfinite",
                         sim_step_executed=False,
-                    )
+                    ) if recorder is not None else None
                     self._recover_nonfinite_envs(env_ids, qpos_before)
-                    recorder.record_events(events)
-                    recorder.raise_if_aborted()
+                    if recorder is not None:
+                        recorder.record_events(events)
+                        recorder.raise_if_aborted()
                     # The actual simulator call sees the recovered finite rows.
                     pre_fields = self._nonfinite_diagnostic_tensors(tensordict)
                 # Any post-step event is, by construction, new in an env whose
@@ -948,22 +1024,8 @@ class _Env(EnvBase):
             if self.recover_nonfinite_state:
                 post_fields = None
                 post_finite = None
-                if recorder is not None:
-                    post_fields = self._nonfinite_diagnostic_tensors(tensordict)
-                    invalid = ~self._all_finite_by_env(post_fields)
-                else:
-                    invalid = torch.zeros_like(self._nonfinite_state_mask)
-                    for state in (
-                        self.sim.data.qpos,
-                        self.sim.data.qvel,
-                        self.sim.data.qacc,
-                        self.sim.data.qacc_warmstart,
-                    ):
-                        invalid.logical_or_(
-                            ~torch.isfinite(state)
-                            .reshape(self.num_envs, -1)
-                            .all(dim=1)
-                        )
+                post_fields = self._nonfinite_diagnostic_tensors(tensordict)
+                invalid = ~self._all_finite_by_env(post_fields)
                 new_invalid = invalid & (~self._nonfinite_state_mask)
                 if bool(invalid.any().item()):
                     env_ids = invalid.nonzero().reshape(-1)
@@ -1002,8 +1064,54 @@ class _Env(EnvBase):
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         ## update simulation
         self._update_sim(tensordict)
+        # MuJoCo's final refresh can itself populate qacc/sensor buffers with
+        # non-finite values even when the last integration substep was finite.
+        # Treat this boundary exactly like a simulator step boundary so those
+        # values cannot enter observations or VecNorm unnoticed.
+        qpos_before_refresh = self.sim.data.qpos.clone()
+        recorder = self.nonfinite_diagnostics
+        pre_refresh_fields = (
+            self._nonfinite_diagnostic_tensors(tensordict)
+            if self.recover_nonfinite_state
+            else None
+        )
+        pre_refresh_finite = (
+            self._finite_by_env(pre_refresh_fields)
+            if pre_refresh_fields is not None
+            else None
+        )
         self.sim.forward()
         self.sim.sense()
+        if self.recover_nonfinite_state:
+            post_refresh_fields = self._nonfinite_diagnostic_tensors(tensordict)
+            invalid = ~self._all_finite_by_env(post_refresh_fields)
+            new_invalid = invalid & (~self._nonfinite_state_mask)
+            if bool(invalid.any().item()):
+                env_ids = invalid.nonzero().reshape(-1)
+                if bool(new_invalid.any().item()):
+                    new_env_ids = new_invalid.nonzero().reshape(-1)
+                    self._nonfinite_state_mask.logical_or_(new_invalid)
+                    self.nonfinite_state_recovery_count += int(new_env_ids.numel())
+                    if recorder is not None:
+                        events = self._make_nonfinite_events(
+                            env_ids=new_env_ids,
+                            substep=self.decimation,
+                            pre_fields=pre_refresh_fields,
+                            pre_finite=pre_refresh_finite,
+                            post_fields=post_refresh_fields,
+                            post_finite=self._finite_by_env(post_refresh_fields),
+                            classification="post_refresh_new_nonfinite",
+                            sim_step_executed=False,
+                        )
+                        recorder.record_events(events)
+                        recorder.raise_if_aborted()
+                self._recover_nonfinite_envs(env_ids, qpos_before_refresh)
+                if recorder is not None:
+                    recovered_fields = self._nonfinite_diagnostic_tensors(tensordict)
+                    if not bool(self._all_finite_by_env(recovered_fields).all().item()):
+                        raise FloatingPointError(
+                            "simulator non-finite recovery left a non-finite boundary tensor"
+                        )
 
         ## do command update before reward computation
         self.command_manager.before_update()
