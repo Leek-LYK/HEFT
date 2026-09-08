@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 import uuid
@@ -96,12 +98,45 @@ def test_cli_build_is_atomic_loadable_and_fk_expandable(tmp_path):
         assert sha256_file(source) == digest_before
         assert (output / "conversion_report.json").is_file()
         assert (output / "source_manifest.json").is_file()
+        assert (output / "selection_manifest.json").is_file()
+        assert (output / "selection_manifest.sha256").is_file()
+        assert (output / "failed_files.jsonl").read_text(encoding="utf-8") == ""
         persisted_report = json.loads(
             (output / "conversion_report.json").read_text(encoding="utf-8")
         )
         assert persisted_report["source_manifest_sha256"] == report["source_manifest_sha256"]
         assert persisted_report["sources"][0]["sha256_before"] == digest_before
         assert persisted_report["sources"][0]["sha256_after"] == digest_before
+        labels = json.loads((output / "id_label.json").read_text(encoding="utf-8"))
+        assert labels[0]["source_path"] == "main/walk_smoke.npz"
+
+        validation_output = tmp_path / "validation.json"
+        validation = subprocess.run(
+            [
+                str(project_root / ".venv" / "bin" / "python"),
+                "scripts/data_process/validate_roban_shard.py",
+                "--mem-path",
+                str(output),
+                "--source-root",
+                str(dataset_root),
+                "--output",
+                str(validation_output),
+                "--motion-sample-count",
+                "1",
+                "--frames-per-motion",
+                "2",
+            ],
+            cwd=project_root,
+            env={**os.environ, "MEMPATH": str(project_root / "dataset")},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert validation.returncode == 0
+        validation_report = json.loads(validation_output.read_text(encoding="utf-8"))
+        assert validation_report["status"] == "PASS"
+        assert validation_report["fk"]["all_finite"] is True
+        assert validation_report["source_integrity"]["all_unchanged"] is True
 
         dataset = GlobalMotionDataset.load_from_mem_paths([str(output)])
         np.testing.assert_allclose(dataset.data.joint_pos.numpy(), canonical, atol=1.0e-3)
@@ -129,6 +164,42 @@ def test_cli_build_is_atomic_loadable_and_fk_expandable(tmp_path):
         assert "--overwrite" in rerun.stderr
     finally:
         shutil.rmtree(output, ignore_errors=True)
+
+
+def test_hash_selection_reaches_target_with_last_complete_motion(tmp_path):
+    dataset_root = tmp_path / "dataset"
+    paths = []
+    for name, frames in (("a.npz", 160), ("b.npz", 170), ("c.npz", 180)):
+        source, _ = write_fk_source_npz(
+            dataset_root / "main" / name, frame_count=frames
+        )
+        paths.append(source)
+
+    from scripts.data_process.generate_roban_dataset import select_and_audit_inputs
+
+    _, selected, report = select_and_audit_inputs(
+        dataset_root=dataset_root,
+        category="main",
+        manifest=None,
+        start_index=0,
+        max_files=None,
+        max_total_frames=None,
+        target_total_frames=300,
+        selection_seed="20260904",
+    )
+    expected = sorted(
+        paths,
+        key=lambda path: hashlib.sha256(
+            ("20260904" + path.relative_to(dataset_root / "main").as_posix()).encode()
+        ).hexdigest(),
+    )
+    assert selected == expected[:2]
+    assert report["input_total_frames"] >= 300
+    assert report["input_total_frames"] == sum(
+        int(np.load(path, allow_pickle=False)["joint_pos"].shape[0])
+        for path in selected
+    )
+    assert report["limit_reason"] == "target_total_frames"
 
 
 def test_interrupted_atomic_writer_never_publishes_partial_output(tmp_path):

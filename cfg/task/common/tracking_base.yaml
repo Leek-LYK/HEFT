@@ -6,6 +6,10 @@ robot:
   mass: ${task.profile.mass}
   contact_body_pattern: ${task.profile.body.feet_pattern}
 
+sim:
+  nconmax: ${oc.select:task.profile.sim.nconmax,200}
+  njmax: ${oc.select:task.profile.sim.njmax,500}
+
 action:
   _target_: active_adaptation.envs.mdp.action.JointPosition
   action_scaling: ${task.profile.action.action_scaling}

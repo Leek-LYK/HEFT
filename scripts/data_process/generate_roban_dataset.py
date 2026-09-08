@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import resource
+import shutil
 from functools import partial
 from pathlib import Path
 from typing import Sequence
@@ -55,11 +56,21 @@ def _resolve_candidates(
     if manifest is None:
         candidates = sorted(category_root.rglob("*.npz"))
     else:
+        if manifest.suffix.lower() == ".json":
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            manifest_rows = payload.get("sources", payload.get("selected", []))
+            lines = [
+                str(row["relative_path"] if isinstance(row, dict) else row)
+                for row in manifest_rows
+            ]
+        else:
+            lines = [
+                raw_line.strip()
+                for raw_line in manifest.read_text(encoding="utf-8").splitlines()
+                if raw_line.strip() and not raw_line.strip().startswith("#")
+            ]
         rows = []
-        for raw_line in manifest.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
+        for line in lines:
             relative = Path(line)
             if relative.is_absolute():
                 raise ValueError(f"manifest entries must be relative paths, got {line!r}")
@@ -71,7 +82,9 @@ def _resolve_candidates(
             if not _is_relative_to(candidate, category_root):
                 raise ValueError(f"manifest entry escapes category directory: {line!r}")
             rows.append(candidate)
-        candidates = sorted(rows)
+        # A manifest is an ordered selection contract.  Preserve that order so
+        # hash-ranked manifests are not silently changed back to filename order.
+        candidates = rows
         if len(candidates) != len(set(candidates)):
             raise ValueError(f"manifest contains duplicate paths: {manifest}")
     if not candidates:
@@ -101,6 +114,8 @@ def select_and_audit_inputs(
     start_index: int,
     max_files: int | None,
     max_total_frames: int | None,
+    target_total_frames: int | None = None,
+    selection_seed: str | None = None,
 ) -> tuple[Path, list[Path], dict]:
     """Deterministically select bounded inputs and fully validate each one."""
     if start_index < 0:
@@ -109,12 +124,33 @@ def select_and_audit_inputs(
         raise ValueError("--max-files must be positive")
     if max_total_frames is not None and max_total_frames <= 0:
         raise ValueError("--max-total-frames must be positive")
-    if max_files is None and max_total_frames is None:
+    if target_total_frames is not None and target_total_frames <= 0:
+        raise ValueError("--target-total-frames must be positive")
+    if max_total_frames is not None and target_total_frames is not None:
         raise ValueError(
-            "refusing an unbounded conversion: pass --max-files and/or --max-total-frames"
+            "--max-total-frames and --target-total-frames are mutually exclusive"
+        )
+    if max_files is None and max_total_frames is None and target_total_frames is None:
+        raise ValueError(
+            "refusing an unbounded conversion: pass --max-files, "
+            "--max-total-frames, and/or --target-total-frames"
         )
 
     category_root, all_candidates = _resolve_candidates(dataset_root.resolve(), category, manifest)
+    selection_hashes: dict[Path, str] = {}
+    if selection_seed is not None:
+        for path in all_candidates:
+            category_relative = path.relative_to(category_root).as_posix()
+            selection_hashes[path] = hashlib.sha256(
+                f"{selection_seed}{category_relative}".encode("utf-8")
+            ).hexdigest()
+        all_candidates = sorted(
+            all_candidates,
+            key=lambda path: (
+                selection_hashes[path],
+                path.relative_to(category_root).as_posix(),
+            ),
+        )
     candidates = all_candidates[start_index:]
     selected: list[Path] = []
     source_rows: list[dict] = []
@@ -137,8 +173,10 @@ def select_and_audit_inputs(
             failures.append(
                 {
                     "relative_path": relative_path,
+                    "selection_hash": selection_hashes.get(path),
+                    "sha256_before": digest_before,
                     "error_type": type(exc).__name__,
-                    "reason": str(exc),
+                    "reason": str(exc).replace(str(dataset_root.resolve()) + "/", ""),
                 }
             )
             consumed += 1
@@ -153,6 +191,8 @@ def select_and_audit_inputs(
         total_frames += frame_count
         source_rows.append(
             {
+                "selection_rank": start_index + attempted - 1,
+                "selection_hash": selection_hashes.get(path),
                 "relative_path": relative_path,
                 "frames": frame_count,
                 "sha256_before": digest_before,
@@ -168,14 +208,28 @@ def select_and_audit_inputs(
             }
         )
         del motion
+        if target_total_frames is not None and total_frames >= target_total_frames:
+            limit_reason = "target_total_frames"
+            break
 
     if not selected:
         raise RuntimeError(
             f"no valid input fits the requested limits; attempted={attempted}, failures={len(failures)}"
         )
+    if target_total_frames is not None and total_frames < target_total_frames:
+        raise RuntimeError(
+            f"valid inputs exhausted before target frames: {total_frames} < {target_total_frames}"
+        )
     report = {
         "category": category,
         "available_files": len(all_candidates),
+        "selection_algorithm": (
+            "sha256(selection_seed + category_relative_path), ascending"
+            if selection_seed is not None
+            else "manifest order" if manifest is not None else "relative path, ascending"
+        ),
+        "selection_seed": selection_seed,
+        "target_total_frames": target_total_frames,
         "start_index": start_index,
         "attempted_files": attempted,
         "consumed_files": consumed,
@@ -195,8 +249,24 @@ def build_dataset(args: argparse.Namespace) -> dict:
     """Run bounded validation and atomically publish a Roban memdataset."""
     dataset_root = args.dataset_root.resolve()
     output = resolve_output_path(args.output)
+    audit_output = (
+        None
+        if args.audit_output is None
+        else resolve_output_path(args.audit_output)
+    )
+    if audit_output == output:
+        raise ValueError("--audit-output must differ from --output")
     if output.exists() and not args.overwrite and not args.audit_only:
         raise FileExistsError(f"output already exists (pass --overwrite to replace it): {output}")
+    if (
+        audit_output is not None
+        and audit_output.exists()
+        and not args.overwrite
+        and not args.audit_only
+    ):
+        raise FileExistsError(
+            f"audit output already exists (pass --overwrite to replace it): {audit_output}"
+        )
 
     _, selected, report = select_and_audit_inputs(
         dataset_root=dataset_root,
@@ -205,6 +275,8 @@ def build_dataset(args: argparse.Namespace) -> dict:
         start_index=args.start_index,
         max_files=args.max_files,
         max_total_frames=args.max_total_frames,
+        target_total_frames=args.target_total_frames,
+        selection_seed=args.selection_seed,
     )
     report["audit_only"] = bool(args.audit_only)
     if args.audit_only:
@@ -234,6 +306,16 @@ def build_dataset(args: argparse.Namespace) -> dict:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         labels = json.loads(labels_path.read_text(encoding="utf-8"))
         successful_paths = {Path(row["source_path"]).resolve() for row in labels}
+        for row in labels:
+            source_path = Path(row["source_path"]).resolve()
+            if not _is_relative_to(source_path, dataset_root):
+                raise RuntimeError(
+                    f"generated label source escapes dataset root: {source_path}"
+                )
+            row["source_path"] = source_path.relative_to(dataset_root).as_posix()
+        labels_path.write_text(
+            json.dumps(labels, ensure_ascii=True) + "\n", encoding="utf-8"
+        )
         skipped_paths = [
             path.relative_to(dataset_root).as_posix()
             for path in selected
@@ -255,6 +337,8 @@ def build_dataset(args: argparse.Namespace) -> dict:
             {
                 "audit_only": False,
                 "output": str(output),
+                "audit_output": None if audit_output is None else str(audit_output),
+                "actual_source_file_count": len(selected),
                 "successful_source_files": len(successful_paths),
                 "skipped_source_files": len(skipped_paths),
                 "skipped_paths": skipped_paths,
@@ -265,10 +349,54 @@ def build_dataset(args: argparse.Namespace) -> dict:
                 "peak_rss_kib": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
             }
         )
-        (temporary_output / "source_manifest.json").write_text(
+        selection_manifest = {
+            "version": 1,
+            "category": args.category,
+            "path_base": "Ominisoma train root",
+            "selection_algorithm": report["selection_algorithm"],
+            "selection_seed": report["selection_seed"],
+            "target_total_frames": report["target_total_frames"],
+            "available_files": report["available_files"],
+            "attempted_files": report["attempted_files"],
+            "selected_files": report["selected_files"],
+            "input_total_frames": report["input_total_frames"],
+            "target_reached": (
+                args.target_total_frames is None
+                or report["input_total_frames"] >= args.target_total_frames
+            ),
+            "sources": [
+                {
+                    key: row[key]
+                    for key in (
+                        "selection_rank",
+                        "selection_hash",
+                        "relative_path",
+                        "frames",
+                        "sha256_before",
+                    )
+                }
+                for row in report["sources"]
+            ],
+        }
+        selection_manifest_path = temporary_output / "selection_manifest.json"
+        selection_manifest_path.write_text(
+            json.dumps(selection_manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        report["selection_manifest_sha256"] = sha256_file(selection_manifest_path)
+        (temporary_output / "selection_manifest.sha256").write_text(
+            f"{report['selection_manifest_sha256']}  selection_manifest.json\n",
+            encoding="utf-8",
+        )
+
+        source_manifest_path = temporary_output / "source_manifest.json"
+        source_manifest_path.write_text(
             json.dumps(
                 {
+                    "version": 1,
                     "category": args.category,
+                    "path_base": "Ominisoma train root",
+                    "selection_manifest_sha256": report["selection_manifest_sha256"],
                     "source_manifest_sha256": report["source_manifest_sha256"],
                     "sources": report["sources"],
                 },
@@ -278,6 +406,12 @@ def build_dataset(args: argparse.Namespace) -> dict:
             + "\n",
             encoding="utf-8",
         )
+        report["source_manifest_file_sha256"] = sha256_file(source_manifest_path)
+        with (temporary_output / "failed_files.jsonl").open(
+            "w", encoding="utf-8"
+        ) as stream:
+            for failure in report["failures"]:
+                stream.write(json.dumps(failure, sort_keys=True) + "\n")
         report_path = temporary_output / "conversion_report.json"
         for _ in range(3):
             report["output_size_bytes"] = _directory_size(temporary_output)
@@ -285,6 +419,19 @@ def build_dataset(args: argparse.Namespace) -> dict:
                 json.dumps(report, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+    if audit_output is not None:
+        artifact_names = (
+            "selection_manifest.json",
+            "selection_manifest.sha256",
+            "conversion_report.json",
+            "failed_files.jsonl",
+            "source_manifest.json",
+        )
+        with atomic_output_directory(
+            audit_output, overwrite=args.overwrite
+        ) as temporary_audit:
+            for name in artifact_names:
+                shutil.copy2(output / name, temporary_audit / name)
     return report
 
 
@@ -295,6 +442,21 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-files", type=int)
     parser.add_argument("--max-total-frames", type=int)
+    parser.add_argument(
+        "--target-total-frames",
+        type=int,
+        help="Select complete valid motions until this frame target is reached or exceeded",
+    )
+    parser.add_argument(
+        "--selection-seed",
+        type=str,
+        help="Order candidates by SHA-256(selection seed + category-relative path)",
+    )
+    parser.add_argument(
+        "--audit-output",
+        type=Path,
+        help="Optional atomically-published directory containing audit artifacts",
+    )
     parser.add_argument(
         "--manifest",
         type=Path,

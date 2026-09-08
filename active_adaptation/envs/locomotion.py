@@ -119,8 +119,8 @@ class SimpleEnv(_Env):
         scene_cfg.sensors = (contact_cfg,)
 
         self.sim_cfg = sim_cfg = SimulationCfg(
-            nconmax=200,
-            njmax=500,
+            nconmax=int(self.cfg.sim.get("nconmax", 200)),
+            njmax=int(self.cfg.sim.get("njmax", 500)),
             mujoco=MujocoCfg(
                 timestep=mjlab_dt,
                 iterations=10,

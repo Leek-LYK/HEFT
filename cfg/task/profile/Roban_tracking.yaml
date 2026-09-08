@@ -2,6 +2,12 @@ tracking_name: ROBANTRACKING
 name: roban
 mass: 40.69991336
 
+# The 50K corpus reaches more simultaneous constraint rows than the original
+# global default (500). Observed overflow requests reached 578; retain margin.
+sim:
+  nconmax: 200
+  njmax: 768
+
 body:
   base_pattern: ^base_link$
   # Used for COM and wrench randomization. It must differ from base_pattern;
@@ -76,6 +82,9 @@ command:
     vz_exit: 0.25
   # Data stage is not implemented. This future path is intentionally absent.
   dataset:
+    # Keep the complete motion tensors in host memory even for large vectorized
+    # runs. Only the bounded per-environment cache is staged on the GPU.
+    keep_on_cpu: true
     skip_initial_frames: 5
     groups:
       - name: seed

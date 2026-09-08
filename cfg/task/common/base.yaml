@@ -17,6 +17,8 @@ sim:
   step_dt: 0.02
   isaac_physics_dt: 0.005
   mujoco_physics_dt: 0.005
+  nconmax: 200
+  njmax: 500
 
 command: {}
 observation: {}

@@ -59,6 +59,8 @@ class MotionTrackingCommand(
 
         # setup dataset
         dataset_extra_keys = [{**k, 'dtype': convert_dtype(k['dtype'])} for k in dataset_extra_keys]
+        dataset = dict(dataset)
+        keep_on_cpu = bool(dataset.pop("keep_on_cpu", False))
         self.dataset = ProgressiveMultiMotionDataset(
             **dataset,
             env_size=self.num_envs,
@@ -66,7 +68,14 @@ class MotionTrackingCommand(
             fk_asset=self.asset,
             dataset_extra_keys=dataset_extra_keys,
             device=self.device,
-            ds_device=(torch.device('cpu') if self.num_envs < 1024 else self.device),
+            # Large reference datasets must not be replicated onto every GPU.
+            # The per-environment rolling cache remains on ``self.device`` and
+            # fetches only the requested windows from this CPU-backed store.
+            ds_device=(
+                torch.device("cpu")
+                if keep_on_cpu or self.num_envs < 1024
+                else self.device
+            ),
         )
         joint_pos_limits = self.asset.data.joint_pos_limits
         joint_vel_limits = getattr(self.asset.data, "soft_joint_vel_limits", None)
@@ -196,7 +205,9 @@ class MotionTrackingCommand(
 
         # --- 2) random sample: uniform in [0, sample_interval) ---
         sample_interval = (lengths - self.max_future_step.to(lengths.dtype) - 100).clamp_min(0)
-        t_rand = (torch.rand(n, device=self.device) * sample_interval.to(torch.float32)).floor().to(self.t.dtype)
+        t_rand = (
+            torch.rand(n, device=self.device) * sample_interval.to(torch.float32)
+        ).floor().to(self.t.dtype)
 
         # --- merge: reinit takes priority over random ---
         t[:] = torch.where(use_reinit, reinit_t, t_rand)
