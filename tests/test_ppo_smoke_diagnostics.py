@@ -1,10 +1,13 @@
+import math
 import unittest
 
 import torch
 
 from active_adaptation.utils.ppo_smoke import (
     gradient_report,
+    optimizer_finite_report,
     parameter_delta,
+    root_tracking_error_summary,
     state_key_report,
     validate_pilot_schedule,
     validate_smoke_schedule,
@@ -46,6 +49,28 @@ class PPOSmokeDiagnosticsTest(unittest.TestCase):
         self.assertEqual(schedule["estimator_sequences_per_minibatch"], 32)
         self.assertEqual(schedule["rollout_updates"], 20)
 
+    def test_formal_pilot_schedule_uses_global_frame_budget_for_ddp(self):
+        schedule = validate_pilot_schedule(
+            num_envs=2048,
+            rollout_horizon=32,
+            num_minibatches=8,
+            total_frames=2048 * 32 * 100 * 3,
+            target_rollout_updates=100,
+            world_size=3,
+        )
+        self.assertEqual(schedule["batch_size"], 2048 * 32)
+        self.assertEqual(schedule["global_batch_size"], 2048 * 32 * 3)
+        self.assertEqual(schedule["rollout_updates"], 100)
+
+    def test_optimizer_finite_report_detects_corruption(self):
+        module = torch.nn.Linear(2, 1)
+        optimizer = torch.optim.Adam(module.parameters())
+        module(torch.ones(1, 2)).sum().backward()
+        optimizer.step()
+        self.assertTrue(optimizer_finite_report(optimizer)["finite"])
+        next(iter(optimizer.state.values()))["exp_avg"].fill_(float("nan"))
+        self.assertFalse(optimizer_finite_report(optimizer)["finite"])
+
     def test_parameter_gradient_and_state_reports(self):
         module = torch.nn.Linear(3, 2)
         before = {
@@ -80,6 +105,22 @@ class PPOSmokeDiagnosticsTest(unittest.TestCase):
         self.assertEqual(
             state_key_report(wrapper.state_dict(), wrapper),
             {"missing_keys": [], "unexpected_keys": []},
+        )
+
+    def test_root_tracking_error_summary_uses_xy_z_and_geodesic(self):
+        current_pos = torch.tensor([[3.0, 4.0, 2.0]])
+        target_pos = torch.tensor([[0.0, 0.0, 1.5]])
+        current_quat = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+        target_quat = torch.tensor([[0.0, 0.0, 0.0, 1.0]])
+        report = root_tracking_error_summary(
+            current_pos, target_pos, current_quat, target_quat
+        )
+        self.assertEqual(report["root_xy_position_error_m"]["mean"], 5.0)
+        self.assertEqual(report["root_z_error_m"]["mean"], 0.5)
+        self.assertAlmostEqual(
+            report["root_orientation_geodesic_error_rad"]["mean"],
+            math.pi,
+            places=6,
         )
 
 
