@@ -13,6 +13,8 @@ app:
 
 total_frames: 4000_000_000
 start_iter: 0
+# Bound a validation run without compressing the full training curriculum.
+stop_after_rollouts: null
 eval_render: false
 save_interval: 150
 seed: 0
@@ -36,11 +38,19 @@ train_record:
   steps: 500
   output_dir: train_records
 
+# Optional local TensorBoard logging. Only rank 0 writes event files. When
+# log_dir is null, diagnostic runs use their output_dir/tensorboard and regular
+# Hydra runs use the current run directory/tensorboard.
+tensorboard:
+  enabled: true
+  log_dir: null
+  flush_secs: 10
+
 wandb:
   name: ${..exp_name}/${now:%m-%d}_${now:%H-%M}
   job_type: train
   project: heft # change this to your own project if you want to log to wandb
-  mode: online # set to 'disabled' when debugging locally
+  mode: disabled # Local checkpoints and TensorBoard do not require W&B
   tags: []
   id: null
   notes: null

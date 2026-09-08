@@ -164,41 +164,52 @@ labels and datasets are planned for a later release.
 
 ## Training
 
-Use `train.sh` as the main entry point. Edit the global configuration at the top of the
-file, especially:
-
-- `PROJECT`
-- `NPROC`
-- the final `run_pipeline` line
-
-For G1:
-
-```bash
-run_pipeline "G1_tracking" "g1_track" "release"
-```
-
-For L7:
-
-```bash
-run_pipeline "L7_tracking" "l7_track" "release"
-```
-
-Then run:
+The local `train.sh` is configured for Roban and the 50K motion dataset. Run all
+three stages with one command:
 
 ```bash
 bash train.sh
 ```
 
-`train.sh` runs the full three-stage pipeline:
+Defaults: GPUs `3,4,7`, 4,096 environments per GPU, Teacher 50,000 rollouts,
+Adapt 5,000 rollouts, Finetune 5,000 rollouts. These are budgets, not convergence
+guarantees. The stages use `roban_train`, `roban_adapt`, and `roban_finetune`.
+Each successful stage passes its local `checkpoint_final.pt` to the next stage.
+A failed command or missing checkpoint stops the pipeline.
 
-1. `+exp=train`
-2. `+exp=adapt`, initialized from the train run
-3. `+exp=finetune`, initialized from the adapt run
+W&B is disabled. Each stage has its own `cfg.yaml`, checkpoints, console log,
+command record and `tensorboard/` under
+`dataset/_audit/roban_ominisoma/roban_pipeline_<timestamp>/{train,adapt,finetune}`.
+Teacher checkpoints are saved every 1,000 rollouts; Adapt/Finetune every 250.
+The final Student checkpoint is for evaluation and export; this script does not
+start deployment or export ONNX automatically.
 
-With 8*8192 envs, training takes roughly 6 hours on 8 PRO6000 GPUs. If GPU memory
-is constrained, reduce `NPROC` in `train.sh` and `num_envs` in
-`cfg/task/common/base.yaml`. Reducing the total number of environments or the training
-budget may significantly affect final performance.
+Preview without starting training or creating output files:
+
+```bash
+DRY_RUN=1 bash train.sh
+```
+
+Override GPUs, budgets, dataset or output directory with environment variables:
+
+```bash
+CUDA_VISIBLE_DEVICES=3,4,7 PER_RANK_ENVS=4096 \
+TRAIN_ROLLOUTS=50000 ADAPT_ROLLOUTS=5000 FINETUNE_ROLLOUTS=5000 \
+DATASET=roban/main/train_50000_v1 OUTPUT_ROOT=/absolute/path/to/new_run \
+bash train.sh
+```
+
+Start at Adapt using an existing Teacher, or at Finetune using an existing Adapt
+checkpoint (always choose a new output root):
+
+```bash
+START_STAGE=adapt CHECKPOINT_PATH=/absolute/path/to/teacher/checkpoint_final.pt bash train.sh
+START_STAGE=finetune CHECKPOINT_PATH=/absolute/path/to/adapt/checkpoint_final.pt bash train.sh
+```
+
+This loads network and normalization state; current checkpoints do not include
+optimizer state for exact training resumption. `NPROC` defaults to the number of
+listed GPUs. `MEMPATH` defaults to this repository's `dataset` directory.
 
 ## Evaluation And Export
 

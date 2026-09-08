@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import datetime
+import resource
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -39,6 +40,30 @@ import os
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(FILE_PATH, "..", "cfg")
 
+
+def _tensorboard_log_dir(cfg: DictConfig, diagnostics_enabled: bool) -> str:
+    tensorboard_cfg = cfg.get("tensorboard", {})
+    configured = tensorboard_cfg.get("log_dir", None)
+    if configured:
+        return os.path.abspath(str(configured))
+    if diagnostics_enabled:
+        audit_kind = "pilot" if bool(cfg.get("pilot", {}).get("enabled", False)) else "smoke"
+        audit_output = cfg.get(audit_kind, {}).get("output_dir", None)
+        if audit_output:
+            return os.path.join(os.path.abspath(str(audit_output)), "tensorboard")
+    return os.path.join(os.getcwd(), "tensorboard")
+
+
+def _write_tensorboard_scalars(writer, metrics: dict, step: int) -> None:
+    for name, value in sorted(metrics.items()):
+        if isinstance(value, torch.Tensor):
+            if value.numel() != 1:
+                continue
+            value = value.detach().item()
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            writer.add_scalar(str(name), float(value), global_step=int(step))
+    writer.flush()
+
 @hydra.main(config_path=CONFIG_PATH, config_name="train", version_base=None)
 def main(cfg: DictConfig):
     OmegaConf.resolve(cfg)
@@ -62,16 +87,20 @@ def main(cfg: DictConfig):
         cfg.task.nonfinite_diagnostics = OmegaConf.create(
             OmegaConf.to_container(nonfinite_cfg, resolve=True)
         )
-        cfg.task.nonfinite_diagnostics.output_dir = str(pilot_cfg.output_dir)
+        diagnostic_output = str(pilot_cfg.output_dir)
+        if aa.is_distributed() and not aa.is_main_process():
+            diagnostic_output = os.path.join(
+                diagnostic_output, f"rank_{aa.get_local_rank()}"
+            )
+        cfg.task.nonfinite_diagnostics.output_dir = diagnostic_output
     if diagnostics_enabled and torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
     
     print(f"is_distributed: {aa.is_distributed()}, local_rank: {aa.get_local_rank()}/{aa.get_world_size()}")
     if aa.is_distributed():
+        torch.cuda.set_device(aa.get_local_rank())
         dist.init_process_group(
             backend="nccl",
-            world_size=aa.get_world_size(),
-            rank=aa.get_local_rank(),
         )
         cfg.seed = cfg.seed + aa.get_local_rank() * 10000
 
@@ -95,27 +124,39 @@ def main(cfg: DictConfig):
             total_iters=total_iters,
             audit_kind="pilot" if pilot_enabled else "smoke",
         )
-    need_logging = aa.is_main_process() and cfg.wandb.get("mode", "disabled") != "disabled"
+    tensorboard_enabled = bool(cfg.get("tensorboard", {}).get("enabled", False))
+    tensorboard_writer = None
+    if tensorboard_enabled and aa.is_main_process():
+        from torch.utils.tensorboard import SummaryWriter
+
+        tensorboard_dir = _tensorboard_log_dir(cfg, diagnostics_enabled)
+        tensorboard_writer = SummaryWriter(
+            log_dir=tensorboard_dir,
+            flush_secs=int(cfg.tensorboard.get("flush_secs", 10)),
+        )
+        aa.print(f"TensorBoard logging enabled: {tensorboard_dir}")
+    need_logging = aa.is_main_process()
+    run = None
     if need_logging:
         default_run_name = f"{cfg.exp_name}-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M')}"
-        run = init_wandb_run(cfg.wandb, config=cfg, name=default_run_name)
-        if run.id:
-            run.name = f"{run.id}-{default_run_name}"
-        else:
-            run.name = default_run_name
-        setproctitle(run.name)
-
-        cfg_save_path = os.path.join(run.dir, "cfg.yaml")
+        output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+        if cfg.wandb.get("mode", "disabled") != "disabled":
+            run = init_wandb_run(cfg.wandb, config=cfg, name=default_run_name)
+            run.name = f"{run.id}-{default_run_name}" if run.id else default_run_name
+            output_dir = run.dir
+        setproctitle(run.name if run is not None else default_run_name)
+        os.makedirs(output_dir, exist_ok=True)
+        cfg_save_path = os.path.join(output_dir, "cfg.yaml")
         OmegaConf.save(cfg, cfg_save_path)
-        run.save(cfg_save_path, policy="now")
-        run.save(os.path.join(run.dir, "config.yaml"), policy="now")
 
         import inspect
         import shutil
         source_path = inspect.getfile(policy.__class__)
-        target_path = os.path.join(run.dir, source_path.split("/")[-1])
+        target_path = os.path.join(output_dir, os.path.basename(source_path))
         shutil.copy(source_path, target_path)
-        run.save(target_path, policy="now")
+        if run is not None:
+            run.save(cfg_save_path, policy="now")
+            run.save(target_path, policy="now")
 
         log_interval = (env.max_episode_length // cfg.algo.train_every) + 1
         logging.info(f"Log interval: {log_interval} steps")
@@ -127,16 +168,18 @@ def main(cfg: DictConfig):
         episode_stats = EpisodeStats(stats_keys, device=env.device)
 
         def save(policy, checkpoint_name: str):
-            ckpt_path = os.path.join(run.dir, f"{checkpoint_name}.pt")
+            ckpt_path = os.path.join(output_dir, f"{checkpoint_name}.pt")
             state_dict = OrderedDict()
-            state_dict["wandb"] = {"name": run.name, "id": run.id}
+            if run is not None:
+                state_dict["wandb"] = {"name": run.name, "id": run.id}
             state_dict["policy"] = policy.state_dict()
             state_dict["env"] = env.state_dict()
             state_dict["cfg"] = cfg
-            if "vecnorm" in locals():
-                state_dict["vecnorm"] = vecnorm.state_dict()
-            torch.save(state_dict, ckpt_path)
-            run.save(ckpt_path, policy="now", base_path=run.dir)
+            state_dict["vecnorm"] = vecnorm.state_dict()
+            torch.save(state_dict, ckpt_path + ".tmp")
+            os.replace(ckpt_path + ".tmp", ckpt_path)
+            if run is not None:
+                run.save(ckpt_path, policy="now", base_path=run.dir)
             logging.info(f"Saved checkpoint to {str(ckpt_path)}")
 
         def should_save(i):
@@ -161,7 +204,11 @@ def main(cfg: DictConfig):
         diagnostics.on_reset(carry)
 
     assert env.training
-    iter_range = range(start_iter, total_iters)
+    stop_after = cfg.get("stop_after_rollouts", None)
+    if stop_after is not None and (int(stop_after) <= 0 or diagnostics_enabled):
+        raise ValueError("stop_after_rollouts must be positive and is for ordinary training only")
+    end_iter = total_iters if stop_after is None else min(total_iters, start_iter + int(stop_after))
+    iter_range = range(start_iter, end_iter)
     if aa.is_main_process():
         progress = tqdm(iter_range)
     else:
@@ -264,8 +311,96 @@ def main(cfg: DictConfig):
         except BaseException as error:
             if diagnostics is not None:
                 diagnostics.abort(error)
+            if tensorboard_writer is not None:
+                tensorboard_writer.close()
             env.close(raise_if_closed=False)
             raise
+
+        if tensorboard_enabled:
+            recorder = getattr(env.base_env, "nonfinite_diagnostics", None)
+            local_recovery_count = float(
+                env.base_env.nonfinite_state_recovery_count
+            )
+            # Match PPO's scalar reward semantics by summing reward groups for
+            # each environment transition before aggregating across ranks.
+            rollout_reward = data["next", "reward"].detach().sum(dim=-1)
+            reward_sum = rollout_reward.double().sum()
+            reward_count = torch.tensor(
+                float(rollout_reward.numel()),
+                device=env.device,
+                dtype=torch.float64,
+            )
+            reward_min = rollout_reward.min().double()
+            reward_max = rollout_reward.max().double()
+            terminal_count = data["next", "done"].double().sum()
+            cumulative_recoveries = torch.tensor(
+                local_recovery_count,
+                device=env.device,
+                dtype=torch.float64,
+            )
+            cumulative_events = torch.tensor(
+                float(
+                    local_recovery_count
+                    if recorder is None
+                    else recorder.total_events
+                ),
+                device=env.device,
+                dtype=torch.float64,
+            )
+            if aa.is_distributed():
+                dist.all_reduce(reward_sum, op=dist.ReduceOp.SUM)
+                dist.all_reduce(reward_count, op=dist.ReduceOp.SUM)
+                dist.all_reduce(reward_min, op=dist.ReduceOp.MIN)
+                dist.all_reduce(reward_max, op=dist.ReduceOp.MAX)
+                dist.all_reduce(terminal_count, op=dist.ReduceOp.SUM)
+                dist.all_reduce(cumulative_recoveries, op=dist.ReduceOp.SUM)
+                dist.all_reduce(cumulative_events, op=dist.ReduceOp.SUM)
+            if tensorboard_writer is not None:
+                rollout_offset = int(
+                    cfg.get("pilot", {}).get("rollout_offset", 0)
+                    if pilot_enabled
+                    else 0
+                )
+                tensorboard_step = rollout_offset + i + 1
+                tensorboard_metrics = {
+                    **{f"train/{name}": value for name, value in train_carry.items()},
+                    "throughput/rollout_transitions_per_s": (
+                        data.numel() * aa.get_world_size() / rollout_time
+                    ),
+                    "throughput/end_to_end_transitions_per_s": (
+                        data.numel()
+                        * aa.get_world_size()
+                        / (rollout_time + training_time)
+                    ),
+                    "timing/rollout_s": rollout_time,
+                    "timing/training_s": training_time,
+                    "rollout/reward_mean_global": reward_sum
+                    / reward_count.clamp_min(1.0),
+                    "rollout/reward_min_global": reward_min,
+                    "rollout/reward_max_global": reward_max,
+                    "rollout/terminal_count_global": terminal_count,
+                    "memory/gpu_allocated_mib": torch.cuda.memory_allocated(env.device)
+                    / (1024**2),
+                    "memory/gpu_reserved_mib": torch.cuda.memory_reserved(env.device)
+                    / (1024**2),
+                    "memory/gpu_peak_allocated_mib": torch.cuda.max_memory_allocated(env.device)
+                    / (1024**2),
+                    "memory/gpu_peak_reserved_mib": torch.cuda.max_memory_reserved(env.device)
+                    / (1024**2),
+                    "memory/cpu_peak_rss_mib": resource.getrusage(
+                        resource.RUSAGE_SELF
+                    ).ru_maxrss
+                    / 1024.0,
+                    "nonfinite/cumulative_simulator_events_global": cumulative_events,
+                    "nonfinite/cumulative_recoveries_global": cumulative_recoveries,
+                    "frames/per_rank_cumulative": (i + 1) * frames_per_batch,
+                    "frames/global_cumulative": (
+                        (i + 1) * frames_per_batch * aa.get_world_size()
+                    ),
+                }
+                _write_tensorboard_scalars(
+                    tensorboard_writer, tensorboard_metrics, tensorboard_step
+                )
 
         if need_logging:
             info = {}
@@ -288,7 +423,14 @@ def main(cfg: DictConfig):
             if save_interval and save_interval > 0 and should_save(i):
                 save(policy, f"checkpoint_{i}")
 
-            run.log(info, step=i)
+            if tensorboard_writer is not None:
+                _write_tensorboard_scalars(
+                    tensorboard_writer,
+                    {k: v for k, v in info.items() if k.startswith("train/stats/")},
+                    i + 1,
+                )
+            if run is not None:
+                run.log(info, step=i)
             print(OmegaConf.to_yaml({k: v for k, v in info.items() if isinstance(v, (float, int))}))
     
     if diagnostics is not None:
@@ -296,6 +438,8 @@ def main(cfg: DictConfig):
             diagnostics.finalize()
         except BaseException as error:
             diagnostics.abort(error)
+            if tensorboard_writer is not None:
+                tensorboard_writer.close()
             env.close(raise_if_closed=False)
             raise
         env.close(raise_if_closed=False)
@@ -307,11 +451,21 @@ def main(cfg: DictConfig):
         if need_logging:
             save(policy, "checkpoint_final")
 
-            policy_eval = policy.get_rollout_policy("eval")
-            info, trajs, stats = evaluate(env, policy_eval, render=cfg.eval_render, seed=cfg.seed)
-            run.log(info, step=total_iters)
+            # A rank-0-only DDP forward may broadcast buffers while other ranks
+            # wait at the shutdown barrier. Evaluate multi-GPU checkpoints in a
+            # separate single-process job instead.
+            if run is not None and not aa.is_distributed():
+                policy_eval = policy.get_rollout_policy("eval")
+                info, trajs, stats = evaluate(env, policy_eval, render=cfg.eval_render, seed=cfg.seed)
+                run.log(info, step=end_iter)
 
-            finish_wandb_run(run)
+            if run is not None:
+                finish_wandb_run(run)
+    if tensorboard_writer is not None:
+        tensorboard_writer.close()
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
+        dist.destroy_process_group()
     exit(0)
 
 
