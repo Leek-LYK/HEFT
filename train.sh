@@ -4,7 +4,7 @@ set -euo pipefail
 
 REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$REPO_ROOT"
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-3,4,7}
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 export MEMPATH=${MEMPATH:-$REPO_ROOT/dataset}
 export WANDB_MODE=disabled
 export MPLCONFIGDIR=${MPLCONFIGDIR:-/tmp/mpl-roban-pipeline}
@@ -12,10 +12,10 @@ export PYTHONUNBUFFERED=1
 
 IFS=',' read -r -a GPU_IDS <<< "$CUDA_VISIBLE_DEVICES"
 NPROC=${NPROC:-${#GPU_IDS[@]}}
-PER_RANK_ENVS=${PER_RANK_ENVS:-4096}
-TRAIN_ROLLOUTS=${TRAIN_ROLLOUTS:-50000}
-ADAPT_ROLLOUTS=${ADAPT_ROLLOUTS:-5000}
-FINETUNE_ROLLOUTS=${FINETUNE_ROLLOUTS:-5000}
+PER_RANK_ENVS=${PER_RANK_ENVS:-16384}
+TRAIN_ROLLOUTS=${TRAIN_ROLLOUTS:-100000}
+ADAPT_ROLLOUTS=${ADAPT_ROLLOUTS:-10000}
+FINETUNE_ROLLOUTS=${FINETUNE_ROLLOUTS:-10000}
 TRAIN_SAVE_INTERVAL=${TRAIN_SAVE_INTERVAL:-1000}
 ADAPT_SAVE_INTERVAL=${ADAPT_SAVE_INTERVAL:-250}
 FINETUNE_SAVE_INTERVAL=${FINETUNE_SAVE_INTERVAL:-250}
@@ -90,7 +90,8 @@ for (( index=FIRST; index<3; index++ )); do
     mkdir -p "$stage_dir"
     printf '%q ' "${cmd[@]}" > "$stage_dir/command.txt"
     printf '\n' >> "$stage_dir/command.txt"
-    "${cmd[@]}" 2>&1 | tee "$stage_dir/console.log"
+    # Use the CUDA libraries bundled with PyTorch, not inherited Conda/system libraries.
+    env -u LD_LIBRARY_PATH "${cmd[@]}" 2>&1 | tee "$stage_dir/console.log"
     if [[ ! -s "$stage_dir/checkpoint_final.pt" ]]; then
       echo "Stage $stage did not produce checkpoint_final.pt; stopping pipeline" >&2
       exit 1

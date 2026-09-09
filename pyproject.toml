@@ -14,6 +14,10 @@ dependencies = [
   "hydra-core",
   "omegaconf",
   "mjlab==1.3.0",
+  # Match the validated 4090 simulator stack; newer MJWarp removes ls_parallel.
+  "mujoco==3.8.0",
+  "mujoco-warp==3.8.0.1",
+  "warp-lang==1.13.0.dev20260306",
   "wandb",
   "moviepy",
   "imageio",
@@ -50,7 +54,7 @@ name = "nvidia"
 url = "https://pypi.nvidia.com"
 
 [tool.uv]
-# mjlab==1.1.1 depends on a pre-release warp-lang.
+# The validated simulator stack uses a pre-release warp-lang.
 prerelease = "allow"
 # Allow resolving a package from later indexes when an earlier index has
 # incompatible versions.

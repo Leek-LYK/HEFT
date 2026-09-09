@@ -16,6 +16,7 @@ class RobanPipelineTest(unittest.TestCase):
 import json, os, sys
 from pathlib import Path
 args = dict(a.split('=', 1) for a in sys.argv[1:] if '=' in a)
+args['test_ld_library_path'] = os.environ.get('LD_LIBRARY_PATH')
 with open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(args) + '\\n')
 p = Path(args['hydra.run.dir'])
 if args['+exp'] == os.environ.get('FAIL_STAGE'): sys.exit(7)
@@ -23,9 +24,9 @@ if args['+exp'] != os.environ.get('MISSING_STAGE'): (p/'checkpoint_final.pt').wr
 ''')
         runner.chmod(0o755)
         env = dict(os.environ, TORCHRUN=str(runner), OUTPUT_ROOT=str(directory/'output'),
-                   CALLS=str(directory/'calls'), CUDA_VISIBLE_DEVICES='3,4,7', NPROC='3',
-                   PER_RANK_ENVS='4096', DRY_RUN='0', START_STAGE='train', CHECKPOINT_PATH='',
-                   TRAIN_ROLLOUTS='50000', ADAPT_ROLLOUTS='5000', FINETUNE_ROLLOUTS='5000')
+                   CALLS=str(directory/'calls'), CUDA_VISIBLE_DEVICES='', NPROC='',
+                   PER_RANK_ENVS='', DRY_RUN='0', START_STAGE='train', CHECKPOINT_PATH='',
+                   TRAIN_ROLLOUTS='', ADAPT_ROLLOUTS='', FINETUNE_ROLLOUTS='')
         env.update(overrides)
         result = subprocess.run(['bash', str(ROOT/'train.sh')], cwd='/tmp', env=env, capture_output=True, text=True)
         calls = [json.loads(line) for line in (directory/'calls').read_text().splitlines()] if (directory/'calls').exists() else []
@@ -33,12 +34,13 @@ if args['+exp'] != os.environ.get('MISSING_STAGE'): (p/'checkpoint_final.pt').wr
 
     def test_handoff(self):
         with tempfile.TemporaryDirectory() as d:
-            result, calls = self.run_pipeline(d)
+            result, calls = self.run_pipeline(d, LD_LIBRARY_PATH="/tmp/heft-test-foreign-cuda")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual([c['+exp'] for c in calls], ['roban_train', 'roban_adapt', 'roban_finetune'])
-            self.assertEqual([c['total_frames'] for c in calls], ['19660800000', '983040000', '1966080000'])
+            self.assertEqual([c['total_frames'] for c in calls], ['52428800000', '2621440000', '5242880000'])
             for i, c in enumerate(calls):
                 self.assertEqual(c['wandb.mode'], 'disabled')
+                self.assertIsNone(c['test_ld_library_path'])
                 if i: self.assertEqual(c['checkpoint_path'], calls[i-1]['hydra.run.dir']+'/checkpoint_final.pt')
 
     def test_failures_stop_pipeline(self):

@@ -171,8 +171,8 @@ three stages with one command:
 bash train.sh
 ```
 
-Defaults: GPUs `3,4,7`, 4,096 environments per GPU, Teacher 50,000 rollouts,
-Adapt 5,000 rollouts, Finetune 5,000 rollouts. These are budgets, not convergence
+Defaults: one B200 GPU (`0`), 16,384 environments, Teacher 100,000 rollouts,
+Adapt 10,000 rollouts, Finetune 10,000 rollouts. These are budgets, not convergence
 guarantees. The stages use `roban_train`, `roban_adapt`, and `roban_finetune`.
 Each successful stage passes its local `checkpoint_final.pt` to the next stage.
 A failed command or missing checkpoint stops the pipeline.
@@ -193,8 +193,8 @@ DRY_RUN=1 bash train.sh
 Override GPUs, budgets, dataset or output directory with environment variables:
 
 ```bash
-CUDA_VISIBLE_DEVICES=3,4,7 PER_RANK_ENVS=4096 \
-TRAIN_ROLLOUTS=50000 ADAPT_ROLLOUTS=5000 FINETUNE_ROLLOUTS=5000 \
+CUDA_VISIBLE_DEVICES=0 PER_RANK_ENVS=16384 \
+TRAIN_ROLLOUTS=100000 ADAPT_ROLLOUTS=10000 FINETUNE_ROLLOUTS=10000 \
 DATASET=roban/main/train_50000_v1 OUTPUT_ROOT=/absolute/path/to/new_run \
 bash train.sh
 ```
