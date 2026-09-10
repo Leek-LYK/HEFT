@@ -20,6 +20,29 @@ TRAIN_SAVE_INTERVAL=${TRAIN_SAVE_INTERVAL:-1000}
 ADAPT_SAVE_INTERVAL=${ADAPT_SAVE_INTERVAL:-250}
 FINETUNE_SAVE_INTERVAL=${FINETUNE_SAVE_INTERVAL:-250}
 DATASET=${DATASET:-roban/main/train_50000_v1}
+DATASET_GROUPS_FILE=${DATASET_GROUPS_FILE:-}
+if [[ -n "$DATASET_GROUPS_FILE" ]]; then
+  DATASET_GROUPS=$("$REPO_ROOT/.venv/bin/python" - "$DATASET_GROUPS_FILE" <<'PY'
+import json, math, sys, yaml
+from pathlib import Path
+p = Path(sys.argv[1])
+groups = json.loads(p.read_text())
+assert isinstance(groups, list) and groups
+for group in groups:
+    assert group['teacher_mem_path'] and math.isfinite(group['weight']) and group['weight'] > 0
+report = p.parent / 'full_report.json'
+if report.exists():
+    assert json.loads(report.read_text())['status'] == 'PASS'
+else:
+    raise ValueError('Full-corpus groups require a completed full_report.json')
+print(yaml.safe_dump(groups, default_flow_style=True, width=1000000, sort_keys=False).strip())
+PY
+)
+  RESAMPLE_ON_RESET=${RESAMPLE_ON_RESET:-true}
+else
+  DATASET_GROUPS="[{name:formal_50k,teacher_mem_path:$DATASET,weight:1.0}]"
+  RESAMPLE_ON_RESET=${RESAMPLE_ON_RESET:-false}
+fi
 OUTPUT_ROOT=${OUTPUT_ROOT:-$REPO_ROOT/dataset/_audit/roban_ominisoma/roban_pipeline_$(date +%Y%m%d_%H%M%S)}
 [[ "$OUTPUT_ROOT" = /* ]] || OUTPUT_ROOT="$REPO_ROOT/$OUTPUT_ROOT"
 START_STAGE=${START_STAGE:-train}
@@ -77,7 +100,8 @@ for (( index=FIRST; index<3; index++ )); do
   total_frames=$((NPROC * PER_RANK_ENVS * STEPS[index] * ROLLOUTS[index]))
   cmd=("$TORCHRUN" --standalone --nproc_per_node="$NPROC" "$REPO_ROOT/scripts/train.py"
     task=tracking "+exp=roban_$stage" "task.num_envs=$PER_RANK_ENVS"
-    "task.profile.command.dataset.groups=[{name:formal_50k,teacher_mem_path:$DATASET,weight:1.0}]"
+    "task.profile.command.dataset.groups=$DATASET_GROUPS"
+    "+task.profile.command.dataset.resample_on_reset=$RESAMPLE_ON_RESET"
     "algo.train_every=${STEPS[index]}" "total_frames=$total_frames" start_iter=0
     "checkpoint_path=$checkpoint" "save_interval=${SAVE_INTERVALS[index]}"
     wandb.mode=disabled tensorboard.enabled=true "tensorboard.log_dir=$stage_dir/tensorboard"
