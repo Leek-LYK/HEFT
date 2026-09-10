@@ -185,6 +185,7 @@ class ProgressiveMultiMotionDataset:
         motion_fps: float = 50.0,
         offset_pos_z: float = 0.0,
         skip_initial_frames: int = 0,
+        resample_on_reset: bool = False,
     ):
         self.device = device
         self.ds_device = device if ds_device is None else ds_device
@@ -194,6 +195,7 @@ class ProgressiveMultiMotionDataset:
         self.motion_fps = float(motion_fps)
         self.offset_pos_z = float(offset_pos_z)
         self.skip_initial_frames = int(skip_initial_frames)
+        self.resample_on_reset = bool(resample_on_reset)
         if self.skip_initial_frames < 0:
             raise ValueError("dataset.skip_initial_frames must be non-negative")
         self.groups = _normalize_dataset_groups(groups=groups)
@@ -252,11 +254,12 @@ class ProgressiveMultiMotionDataset:
         self._resample_motion_ids(self._all_env_ids)
         self._invalidate_cache(self._all_env_ids)
 
-    def reset(self, env_ids: torch.Tensor) -> torch.Tensor:
+    def reset(self, env_ids: torch.Tensor, *, resample_mask: torch.Tensor | None = None) -> torch.Tensor:
         env_ids = env_ids.long()
-        # do not resample motion ids or invalidate cache here
-        # self._resample_motion_ids(env_ids)
-        # self._invalidate_cache(env_ids)
+        if self.resample_on_reset:
+            new_ids = env_ids if resample_mask is None else env_ids[resample_mask]
+            self._resample_motion_ids(new_ids)
+            self._invalidate_cache(new_ids)
         return self._len_A[env_ids]
 
     @property

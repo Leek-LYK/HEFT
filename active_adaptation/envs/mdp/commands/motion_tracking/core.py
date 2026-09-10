@@ -192,13 +192,16 @@ class MotionTrackingCommand(
     ### sample init -> sample init robot -> reset
     def sample_init(self, env_ids: torch.Tensor):
         t = self.t[env_ids]
-        # resample motion
-        lengths = self.dataset.reset(env_ids)
-
         n = env_ids.shape[0]
 
         # --- 1) reinit: rewind from previous t when requested ---
         use_reinit = self._reinit_requested[env_ids] & (torch.rand(n, device=self.device) < self.reinit_prob)
+        # Rewind only within the same motion. Fresh episodes may sample the
+        # entire corpus; keeping the previous t for a new motion is invalid.
+        if self.dataset.resample_on_reset:
+            lengths = self.dataset.reset(env_ids, resample_mask=~use_reinit)
+        else:
+            lengths = self.dataset.reset(env_ids)
         rewind = torch.randint(self.reinit_min_steps, self.reinit_max_steps + 1, (n,), device=self.device, dtype=self.t.dtype)
         reinit_t = (t - rewind).clamp(min=0)
         self._reinit_requested[env_ids] = False
