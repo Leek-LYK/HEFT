@@ -43,8 +43,11 @@ asset and `MotionFKHelper` reconstructs all body poses and finite-difference
 velocities from the three minimal tensors. Stored source body poses are never
 used as runtime targets. Multiple configured dataset paths are accepted and
 combined, but the current loader converts every shard to float32 and then uses
-`torch.cat`. `MotionTrackingCommand` selects CPU storage below 1024 envs and the
-simulation device at 1024 envs or above.
+`torch.cat`. With `keep_on_cpu: true`, `MotionTrackingCommand` keeps the full
+reference dataset on CPU regardless of environment count; only bounded runtime
+windows are transferred to the simulation device. Without this option, storage
+is selected on CPU below 1024 envs and on the simulation device at 1024 envs or
+above. The successful 50K Roban training uses `keep_on_cpu: true`.
 
 The existing writer likewise retains one tensor chunk per accepted motion and
 performs a final `torch.cat`; an unbounded conversion is therefore unsuitable
@@ -213,50 +216,29 @@ before/after hashes, its manifest digest, counts, and failures. An interrupted
 run leaves only a hidden temporary directory, which is removed on handled
 errors; it never publishes a partial output under the requested name.
 
-## Smoke results
+## Current training dataset and memory limits
 
-The single-file smoke used
-`main/210531/walk_forward_confident_003__A001.npz`: an ordinary 1,143-frame
-forward walk with root height 0.7431–0.8011 m, no joint-range violations, no
-NaN/Inf, and no existing-filter rejection. It produced one 1,143-frame motion.
-The source SHA-256 matched before and after conversion. Loading through the
-normal `MEMPATH` resolver succeeded, and a 16-frame window expanded through the
-current MJCF with all fields finite.
+The successful training baseline uses `roban/main/train_50000_v1` with
+`keep_on_cpu: true`. See the [training guide](使用说明.md) for commands and the
+[success record](roban_training_sim2real_success_20260908.md) for the exact run.
+The dataset's selection manifest and conversion report define the selected
+source files and valid segments; 50K selected files does not imply 50K segments.
 
-The deterministic subset used the first 50 sorted `main` files. All 50 passed,
-with 33,574 input/output frames, zero failures, and zero filter skips. The
-output was about 1.9 MiB. Random sampling of 16 motions by 12 frames and
-batched FK over all 37 non-world current MJCF bodies were finite. Dataset load
-and release did not change the process file-descriptor count. Re-running the
-same output without `--overwrite` was rejected.
+CPU placement avoids storing the full reference corpus on each GPU. It does
+not make loading lazy: each DDP rank still loads float32 tensors and concatenates
+them independently, so conversion and host memory budgets must remain bounded.
+Multiple shards must be listed explicitly; the loader does not recursively
+discover a shard directory. Select dataset group weights deliberately.
 
-The measured process peak RSS was about 1.5 GiB for both conversions; most of
-that baseline comes from importing the project/Torch/MJLab stack rather than
-the small stored tensors.
+The small `_smoke/roban/main_subset` dataset remains an input to the smoke and
+pilot configurations. `roban/main/shard_000` remains the Teacher evaluation
+script's default dataset; neither is an obsolete cache.
 
-## Full conversion and runtime risks
+## Historical validation
 
-The `main` category contains 108,193 files and about 62 GiB of compressed
-input. Do not pass it unbounded to the current writer. The immediately usable
-strategy is explicit 1–2 million-frame memdataset shards, each created with a
-bounded `--start-index`, `--max-files`, and `--max-total-frames`. The current
-multi-path loader can read such shards only when every shard path is listed
-explicitly as a dataset group/path; it does not recursively discover a shard
-directory.
-
-Sharding bounds conversion-time `torch.cat` memory and provides atomic resume
-points, but it does not solve training-time memory: `load_from_mem_paths`
-converts each shard to float32 and concatenates all shards. At 1024 or more
-environments, that combined dataset is selected for GPU storage. Before full
-training, implement a lazy memmap/shard index (or a two-pass, preallocated
-single-dataset writer plus lazy loader) and make dataset placement explicitly
-configurable, defaulting large datasets to CPU. Dataset group weights must also
-be chosen deliberately if shards are exposed as separate groups.
-
-## Not covered
-
-This stage does not convert the complete corpus, start PPO, enable paired PMG,
-change the 40-dimensional quantized Student latent contract, export ONNX, or
-perform Sim2Real. The tracking env GPU smoke is conditional on an actually idle
-GPU; CPU memdataset and current-MJCF FK checks do not substitute for a simulator
-reset/step test.
+The initial single-file and 50-file smoke results, full-corpus estimates and
+then-pending work are preserved in the
+[data-stage historical snapshot](archive/roban_ominisoma_dataset_adapter_pre_cleanup_20260909.md).
+Those pending-work statements describe that earlier stage, not current support.
+Data conversion and FK checks alone do not establish policy or deployment quality;
+consult the success record for the actual validation scope.

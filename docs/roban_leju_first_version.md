@@ -1,10 +1,12 @@
-# Roban S22 / Leju HEFT first-version training contract
+# Roban / Leju HEFT training contract
 
 ## Scope and asset
 
-This is the first training-side adapter for the Roban S22 handball, fixed-head
-variant. It intentionally does not add motion data, start PPO training, export a
-deployment ONNX, or perform Sim2Real.
+This document retains the Roban handball, fixed-head adapter contract.
+The original delivery uses S22 naming; training and deployment use the S17
+identifiers described below. The three-stage training and Student deployment
+baseline is recorded in [the 2026-09-08 success record](roban_training_sim2real_success_20260908.md).
+For current training commands, see [the training guide](使用说明.md).
 
 The authoritative training MJCF is:
 
@@ -207,17 +209,16 @@ First-version provisional values borrowed conservatively from G1/L7:
 - training communication-delay, boot-delay and torque-limit curriculum values;
 - `soft_joint_pos_limit_factor=0.9`.
 
-## Deferred work and blockers
+## Current workflow and historical scope
 
-The data stage is intentionally not implemented. A future `roban/seed/all`
-path remains declarative and does not exist yet. Before tracking env startup,
-the data stage must validate dataset `joint_names`/`body_names`, Roban foot
-names, the hard-coded foot names in `active_adaptation/utils/motion.py`, NPZ and
-memdataset production, and 50 Hz motion semantics. No placeholder dataset,
-ProtoMotions conversion or loader change is part of this version.
+Dataset conversion, three-stage training, Student ONNX export and the reported
+CSV-based Sim2Real success are documented in the
+[success baseline](roban_training_sim2real_success_20260908.md).
+The formal dataset is `roban/main/train_50000_v1`; the earlier declarative
+`roban/seed/all` path is not a current training instruction.
 
-The export stage must still verify ONNX input name `policy`, shape `[1,1313]`,
-output name `action`, shape `[1,21]`, embedded observation normalization, the
-Tanh/Round quantizer graph, and external-data packaging. Flow Planner,
-`best.onnx`, the 27-dimensional flow state, hardware validation and Sim2Real
-are out of scope.
+The original data/export blockers are preserved in the
+[first-version historical snapshot](archive/roban_leju_first_version_pre_cleanup_20260909.md).
+Flow Planner and Pico are outside the demonstrated CSV deployment scope.
+The provisional training parameters listed above remain distinct from verified
+controller values; a successful run does not validate every motion or setting.
