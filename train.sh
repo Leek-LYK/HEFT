@@ -19,6 +19,7 @@ FINETUNE_ROLLOUTS=${FINETUNE_ROLLOUTS:-10000}
 TRAIN_SAVE_INTERVAL=${TRAIN_SAVE_INTERVAL:-1000}
 ADAPT_SAVE_INTERVAL=${ADAPT_SAVE_INTERVAL:-250}
 FINETUNE_SAVE_INTERVAL=${FINETUNE_SAVE_INTERVAL:-250}
+STOP_AFTER_ROLLOUTS=${STOP_AFTER_ROLLOUTS:-null}
 DATASET=${DATASET:-roban/main/train_50000_v1}
 DATASET_GROUPS_FILE=${DATASET_GROUPS_FILE:-}
 if [[ -n "$DATASET_GROUPS_FILE" ]]; then
@@ -103,6 +104,7 @@ for (( index=FIRST; index<3; index++ )); do
     "task.profile.command.dataset.groups=$DATASET_GROUPS"
     "+task.profile.command.dataset.resample_on_reset=$RESAMPLE_ON_RESET"
     "algo.train_every=${STEPS[index]}" "total_frames=$total_frames" start_iter=0
+    "stop_after_rollouts=$STOP_AFTER_ROLLOUTS"
     "checkpoint_path=$checkpoint" "save_interval=${SAVE_INTERVALS[index]}"
     wandb.mode=disabled tensorboard.enabled=true "tensorboard.log_dir=$stage_dir/tensorboard"
     train_record.enabled=false headless=true app.headless=true app.enable_cameras=false eval_render=false

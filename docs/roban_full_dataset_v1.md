@@ -81,31 +81,34 @@ episode 保持原 motion，避免把旧时间索引用到新 motion 上。
 每个 shard 权重等于其中有效 motion 数，shard 内均匀抽样，得到全局 motion 均匀
 采样。不是六类等权；main 的份额由有效文件数决定。旧训练配置默认保持不重采样。
 
-## Teacher（GPU 3、4、7）
+## Teacher（单 B200，GPU 0）
 
 启动新的 Teacher：
 
 ```bash
-cd /data/liyinkun/project_HEFT
 bash scripts/train_roban_full.sh
 ```
 
-默认从头训练，50000 rollout、4096 env/rank、32 steps/rollout，global
-`total_frames=19660800000`；W&B disabled，TensorBoard 和本地 checkpoint 开启。
-输出目录为 `dataset/_audit/roban_ominisoma/teacher_full_r50000_v1`。
+脚本自动定位仓库，默认 GPU `0`、单进程、16384 个环境、50000 rollout、
+32 steps/rollout，`total_frames=26214400000`（按单卡计算）。
+W&B disabled，TensorBoard 和本地 checkpoint 开启；启动时清除继承的
+`LD_LIBRARY_PATH`，避免 Conda CUDA 库冲突。
+输出目录为 `dataset/_audit/roban_ominisoma/teacher_full_r50000_<timestamp>`。
+可覆盖 `CUDA_VISIBLE_DEVICES`（仅一个设备）、`MEMPATH`、`PER_RANK_ENVS`、
+`ROLLOUTS`、`OUTPUT`；`DRY_RUN=1` 只打印命令，不创建训练目录。
 
 仅进行短验证，保留正式课程预算：
 
 ```bash
 STOP_AFTER_ROLLOUTS=100 \
-OUTPUT=/data/liyinkun/project_HEFT/dataset/_audit/roban_ominisoma/teacher_full_validation_v1 \
+OUTPUT="$PWD/dataset/_audit/roban_ominisoma/teacher_full_validation_v2" \
 bash scripts/train_roban_full.sh
 ```
 
 如需继承已有 Teacher 权重，用 `CHECKPOINT=/absolute/path/checkpoint_final.pt`。
 当前 checkpoint 不保存完整优化器状态，因此属于加载权重继续学习，而非精确断点恢复。
 
-## 本次三卡训练验证
+## 历史三卡训练验证（4090）
 
 本次先完成了全量 Teacher 的 100-rollout 三卡验证（从头初始化），未启动
 50000-rollout 长任务，也未运行 Adapt/Finetune。验证输出：
@@ -129,21 +132,55 @@ simulator events 使用 recovery 计数，不是独立事件审计。这是训�
 
 ## 三阶段 pipeline
 
-现有 `train.sh` 支持全量 groups 文件；Teacher/Adapt/Finetune 都使用相同过滤数据及重采样配置：
+全量入口通过 `MODE=pipeline` 调用 `train.sh`，自动传入全量 groups；
+Teacher/Adapt/Finetune 都使用相同过滤数据及重采样配置：
 
 ```bash
-DATASET_GROUPS_FILE=dataset/roban/full/train_v1/dataset_groups.json \
-DRY_RUN=1 bash train.sh
+MODE=pipeline DRY_RUN=1 bash scripts/train_roban_full.sh
 ```
 
 检查打印的三阶段命令后启动：
 
 ```bash
-DATASET_GROUPS_FILE=dataset/roban/full/train_v1/dataset_groups.json \
-OUTPUT_ROOT=/data/liyinkun/project_HEFT/dataset/_audit/roban_ominisoma/pipeline_full_v1 \
-bash train.sh
+MODE=pipeline \
+OUTPUT_ROOT="$PWD/dataset/_audit/roban_ominisoma/pipeline_full_v1" \
+bash scripts/train_roban_full.sh
 ```
 
-默认阶段预算沿用现有 pipeline：Teacher 50000、Adapt 5000、Finetune 5000。
+全量入口默认阶段预算：Teacher 50000、Adapt 10000、Finetune 10000。
+可分别设置 `TRAIN_ROLLOUTS`、`ADAPT_ROLLOUTS`、`FINETUNE_ROLLOUTS`；
+直接调用 `train.sh` 的 Teacher 默认预算仍为 100000。
+pipeline 输出使用 `OUTPUT_ROOT`，从中间阶段启动使用 `START_STAGE` 和
+`CHECKPOINT_PATH`（见使用说明）。
+
+单 B200 全量三阶段短验证（每阶段两轮，自动衔接 checkpoint）：
+
+```bash
+MODE=pipeline STOP_AFTER_ROLLOUTS=2 \
+OUTPUT_ROOT="$PWD/dataset/_audit/roban_ominisoma/b200_full_pipeline_validation" \
+bash scripts/train_roban_full.sh
+```
+
+`STOP_AFTER_ROLLOUTS` 只限制实际运行轮数，不缩短各阶段课程的总预算。
+
+## 单 B200 三阶段实测（2026-09-10）
+
+使用上述短验证配置，16384 个环境、全量 27 shard / 115061 motion，
+Teacher → Adapt → Finetune 正常退出，各完成两次更新并保存最终 checkpoint。
+各阶段均验证 CPU 参考数据、reset 重采样和前一阶段 checkpoint 路径。
+
+| 阶段 | 实际 frames | TensorBoard 标量点 | 仿真恢复累计次数 |
+| --- | ---: | ---: | ---: |
+| Teacher | 1048576 | 147 | 1262 |
+| Adapt | 524288 | 63 | 725 |
+| Finetune | 1048576 | 145 | 1241 |
+
+三份 checkpoint 的 policy / vecnorm 各 79 个张量及所有标量点均为有限值。
+验证报告：`dataset/_audit/roban_ominisoma/b200_full_pipeline_validation_20260910/validation_report.json`；
+同目录各阶段包含 `console.log`、`cfg.yaml`、TensorBoard 和 `checkpoint_final.pt`。
+启动脚本的 6 项 unittest 通过；额外配置测试因 `.venv` 缺少 pytest 未运行。
+本次只验证训练链路与默认环境规模可运行，不证明策略收敛或长时间稳定性；
+仿真仍发生非有限状态恢复，正式训练应继续观察恢复率和跟踪效果。
+
 已成功的旧 50K Adapt 实际累计预算为 7543；需要匹配该预算可设置 `ADAPT_ROLLOUTS=7543`。
 导出和部署仍按当前使用说明执行。

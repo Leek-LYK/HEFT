@@ -1,13 +1,10 @@
-# Roban Ominisoma dataset adapter
+# Roban Ominisoma 数据集适配
 
-This document defines the conversion boundary between the legacy
-Ominisoma/IsaacLab Roban export and HEFT's current Roban asset. It does not
-change the G1/L7 motion contract.
+本文档定义了旧版 Ominisoma/IsaacLab Roban 导出与 HEFT 当前 Roban 资产之间的转换边界。它不改变 G1/L7 运动契约。
 
 ## Existing HEFT pipeline
 
-The standard input accepted by `scripts/data_process/generate_dataset.py` is a
-50 Hz NPZ with these fields:
+`scripts/data_process/generate_dataset.py` 接受的标准输入是一个 50 Hz 的 NPZ，包含以下字段：
 
 | Field | Contract |
 | --- | --- |
@@ -15,44 +12,30 @@ The standard input accepted by `scripts/data_process/generate_dataset.py` is a
 | `root_rot` | `[T, 4]`, quaternion in **xyzw** order |
 | `dof_pos` | `[T, J]` |
 | `local_body_pos` | `[T, B, 3]`, positions expressed in the rotated root frame |
-| `joint_names` | ordered names for the first `J` DOF columns |
-| `body_names` | ordered names for the `B` body columns |
+| `joint_names` | 前 `J` 个 DOF 列的有序名称 |
+| `body_names` |  `B` 个 body 列的有序名称 |
 | `mocap_framerate`, `frequency`, or `fps` | must resolve to 50 |
 
-The standard loader converts `root_rot` exactly once from xyzw to wxyz and
-forms internal MuJoCo qpos as
+标准加载器将 root_rot 从 `xyzw` 恰好转换一次为 `wxyz`，并形成内部 MuJoCo qpos 如下：
 
 ```text
 [root_xyz, root_quaternion_wxyz, joint_position]
 ```
 
-It reconstructs source world positions for filtering as
+它为过滤重建源世界位置如下：
 
 ```text
 body_pos_w = R_world_root @ local_body_pos + root_pos_w
 ```
+写入器仅在 `_tensordict` 中存储 `root_pos_w`、`root_quat_w（wxyz）`和 `joint_pos`。`meta_motion.json` 包含 `joint_names`、旧版 `body_names`、运动 `starts/ends` 以及可选的逐运动信息。`id_label.json` 包含源/片段标签。不存储根/身体速度和身体位姿。
 
-The writer stores only `root_pos_w`, `root_quat_w` (wxyz), and `joint_pos` in
-`_tensordict`. `meta_motion.json` contains `joint_names`, legacy `body_names`,
-motion `starts`/`ends`, and optional per-motion information. `id_label.json`
-contains source/segment labels. Root/body velocities and body poses are not
-stored.
+运行时，`ProgressiveMultiMotionDataset` 从当前资产选择身体名称，`MotionFKHelper` 从三个最小张量重建所有身体位姿和有限差分速度。存储的源身体位姿从不作为运行时目标使用。接受并组合多个配置的数据集路径，但当前加载器将每个分片转换为 float32，然后使用 `torch.cat`。`MotionTrackingCommand` 在低于 1024 个环境时选择 CPU 存储，在 1024 个环境或以上时选择仿真设备。
 
-At runtime, `ProgressiveMultiMotionDataset` selects body names from the current
-asset and `MotionFKHelper` reconstructs all body poses and finite-difference
-velocities from the three minimal tensors. Stored source body poses are never
-used as runtime targets. Multiple configured dataset paths are accepted and
-combined, but the current loader converts every shard to float32 and then uses
-`torch.cat`. `MotionTrackingCommand` selects CPU storage below 1024 envs and the
-simulation device at 1024 envs or above.
+现有写入器同样为每个被接受的 motion 保留一个张量块，并执行最终 torch.cat；因此无界转换不适合完整 Roban 语料库。
 
-The existing writer likewise retains one tensor chunk per accepted motion and
-performs a final `torch.cat`; an unbounded conversion is therefore unsuitable
-for the full Roban corpus.
+## Ominisoma 源模式
 
-## Ominisoma source schema
-
-Every audited source file uses:
+每个已审计源文件使用：
 
 | Field | Shape | Dtype |
 | --- | --- | --- |
@@ -64,12 +47,11 @@ Every audited source file uses:
 | `joint_vel` | `[T, 21]` | `float32` |
 | `fps` | `[1]` | `int64`, value 50 |
 
-The root candidate is `base_link`, body index 0. The source does not carry
-joint/body names, so the following fixed contracts are part of the adapter.
+根候选是 `base_link`，身体索引 0。源不携带关节/身体名称，因此以下固定契约是适配器的一部分。
 
-### Joint order
+### 关节顺序
 
-Source order:
+源顺序：
 
 ```text
 waist_yaw,
@@ -80,7 +62,7 @@ zarm_l4, zarm_r4, leg_l4, leg_r4,
 leg_l5, leg_r5, leg_l6, leg_r6
 ```
 
-Target order is imported directly from `ROBAN_JOINT_ORDER`:
+目标顺序直接导入自 `ROBAN_JOINT_ORDER`:
 
 ```text
 waist_yaw_joint,
@@ -90,17 +72,16 @@ zarm_l1_joint, zarm_l2_joint, zarm_l3_joint, zarm_l4_joint,
 zarm_r1_joint, zarm_r2_joint, zarm_r3_joint, zarm_r4_joint
 ```
 
-The name-derived source-to-target indices are:
+由名称推导的源到目标索引为：
 
 ```text
 (0, 3, 7, 11, 15, 17, 19, 4, 8, 12, 16, 18, 20,
  1, 5, 9, 13, 2, 6, 10, 14)
 ```
 
-Both position and velocity arrays use this permutation. Missing, duplicate, or
-unknown contract names are errors. Waist yaw is not negated.
+位置和速度数组都使用该置换。缺失、重复或未知的契约名称都是错误。腰部偏航不取反。
 
-### Body order
+### Body 顺序
 
 ```text
 base_link, waist_yaw_link, zarm_l1_link, zarm_r1_link, zhead_1_link,
@@ -111,42 +92,31 @@ leg_l4_link, leg_r4_link, zarm_l5_link, zarm_r5_link,
 leg_l5_link, leg_r5_link, leg_l6_link, leg_r6_link
 ```
 
-`zarm_l5_link`, `zarm_r5_link`, and `camera_base` belong to the legacy asset.
-They are not renamed to `l_handball`, `r_handball`, or `head_camera_base`.
-Source world body states are used only for quality/FK audits and preprocessing
-filters. The Roban adapter writes an empty legacy `body_names` metadata list;
-runtime body states and names come exclusively from the current MJCF FK.
+`zarm_l5_link`, `zarm_r5_link`, and `camera_base` 属于旧版资产。它们不会被重命名为 `l_handball`, `r_handball`, or `head_camera_base`。源世界身体状态仅用于质量/FK 审计和预处理过滤器。 Roban 适配器写入一个空的旧版 `body_names` 元数据列表；运行时身体状态和名称完全来自当前 MJCF FK。
 
-The configured source feet are `leg_l6_link` and `leg_r6_link`. The generic
-preprocessor now accepts `foot_names`; its default remains
+配置的源脚是 `leg_l6_link` and `leg_r6_link`. 通用预处理器现在接受 `foot_names`; 其默认值仍为
 `left_ankle_roll_link` and `right_ankle_roll_link` for G1/L7.
 
-## Quaternion and local-position boundary
+## 四元数与局部位置边界
 
-Source quaternions are always interpreted as wxyz. The adapter checks finite
-values and nonzero norms, rejects a maximum norm deviation above `1e-2`,
-normalizes accepted values, counts adjacent negative dot products, and applies
-the physically equivalent `q/-q` sign correction along time. It never probes a
-second ordering.
+源四元数始终解释为 wxyz。适配器检查有限值和非零范数，拒绝最大范数偏差超过 `1e-2`, 对可接受值进行归一化，统计相邻负点积，并沿时间应用物理等价的 `q/-q` 符号校正。它从不探测第二种顺序。
 
-If a standard-format xyzw value is needed, conversion is exactly:
+如果需要标准格式的 xyzw 值，转换精确为：
 
 ```text
 root_rot_xyzw = root_quat_wxyz[..., [1, 2, 3, 0]]
 ```
 
-The inverse conversion is tested element-by-element. The adapter can consume
-world positions directly, so it does not manufacture a second standard NPZ.
-For callers that need local positions, the correct equations are:
+逆转换经过逐元素测试。适配器可以直接消费世界位置，因此不会制造第二份标准 NPZ。对于需要局部位置的调用方，正确方程为：
 
 ```text
 local_body_pos = R_world_root.T @ (body_pos_w - root_pos_w)
 body_pos_w = root_pos_w + R_world_root @ local_body_pos
 ```
 
-Both directions and a non-identity rotated-root round trip are covered by tests.
+双向以及非单位旋转根的往返均由测试覆盖。
 
-## FK audit result
+## FK 审计结果
 
 The audit deterministically used two files from each of `acrobatic`, `crawl`,
 `jump`, `kneel`, `main`, and `squat`. Those 12 files contained 10,824 frames;

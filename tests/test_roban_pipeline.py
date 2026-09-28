@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RobanPipelineTest(unittest.TestCase):
-    def run_pipeline(self, directory, **overrides):
+    def run_pipeline(self, directory, script='train.sh', **overrides):
         directory = Path(directory)
         runner = directory / 'torchrun'
         runner.write_text('''#!/usr/bin/env python3
@@ -28,7 +28,7 @@ if args['+exp'] != os.environ.get('MISSING_STAGE'): (p/'checkpoint_final.pt').wr
                    PER_RANK_ENVS='', DRY_RUN='0', START_STAGE='train', CHECKPOINT_PATH='',
                    TRAIN_ROLLOUTS='', ADAPT_ROLLOUTS='', FINETUNE_ROLLOUTS='')
         env.update(overrides)
-        result = subprocess.run(['bash', str(ROOT/'train.sh')], cwd='/tmp', env=env, capture_output=True, text=True)
+        result = subprocess.run(['bash', str(ROOT/script)], cwd='/tmp', env=env, capture_output=True, text=True)
         calls = [json.loads(line) for line in (directory/'calls').read_text().splitlines()] if (directory/'calls').exists() else []
         return result, calls
 
@@ -50,6 +50,31 @@ if args['+exp'] != os.environ.get('MISSING_STAGE'): (p/'checkpoint_final.pt').wr
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(len(calls), 2)
 
+    def test_full_b200_pipeline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = Path(directory) / 'dataset'
+            dataset.mkdir()
+            groups = [{'name': 'full', 'teacher_mem_path': 'roban/full/shard', 'weight': 2}]
+            (dataset / 'dataset_groups.json').write_text(json.dumps(groups))
+            (dataset / 'full_report.json').write_text(json.dumps({
+                'status': 'PASS', 'source_hashes_unchanged': True, 'motions': 2, 'shards': [{}],
+            }))
+            result, calls = self.run_pipeline(
+                directory, script='scripts/train_roban_full.sh', MODE='pipeline',
+                DATASET_ROOT=str(dataset), STOP_AFTER_ROLLOUTS='2',
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(calls[0]['total_frames'], '26214400000')
+            for index, call in enumerate(calls):
+                self.assertEqual(call['--nproc_per_node'], '1')
+                self.assertEqual(call['task.num_envs'], '16384')
+                self.assertEqual(call['stop_after_rollouts'], '2')
+                self.assertEqual(call['+task.profile.command.dataset.resample_on_reset'], 'true')
+                self.assertIn('roban/full/shard', call['task.profile.command.dataset.groups'])
+                if index:
+                    self.assertEqual(call['checkpoint_path'], calls[index - 1]['hydra.run.dir'] + '/checkpoint_final.pt')
+
     def test_start_finetune(self):
         with tempfile.TemporaryDirectory() as d:
             checkpoint = Path(d)/'existing.pt'
@@ -58,6 +83,26 @@ if args['+exp'] != os.environ.get('MISSING_STAGE'): (p/'checkpoint_final.pt').wr
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0]['checkpoint_path'], str(checkpoint))
+
+    def test_full_b200_teacher_dry_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = Path(directory) / 'dataset'
+            dataset.mkdir()
+            (dataset / 'dataset_groups.json').write_text(json.dumps([
+                {'name': 'full', 'teacher_mem_path': 'roban/full/shard', 'weight': 2},
+            ]))
+            (dataset / 'full_report.json').write_text(json.dumps({
+                'status': 'PASS', 'source_hashes_unchanged': True, 'motions': 2, 'shards': [{}],
+            }))
+            result, calls = self.run_pipeline(
+                directory, script='scripts/train_roban_full.sh', MODE='teacher',
+                DATASET_ROOT=str(dataset), DRY_RUN='1', OUTPUT=str(Path(directory) / 'teacher'),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('--nproc_per_node=1', result.stdout)
+            self.assertIn('total_frames=26214400000', result.stdout)
+            self.assertFalse(calls)
+            self.assertFalse((Path(directory) / 'teacher').exists())
 
     def test_dry_run_and_existing_output(self):
         with tempfile.TemporaryDirectory() as d:
