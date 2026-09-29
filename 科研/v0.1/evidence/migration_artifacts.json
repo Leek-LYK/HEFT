@@ -1,0 +1,850 @@
+{
+  "schema_version": 1,
+  "source_branch": "roban/RefineTrack/v0.1",
+  "source_git_head": "52d8d9a5c1500536facbdc162b4e9670363dc5ec",
+  "contract_sha256": "99f798e902ef1e9770d51836a706e3eda393ae632ff000a3aad2a2fabba919b0",
+  "required_bytes": 512283051,
+  "optional_bytes": 1154964515,
+  "files": [
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/bridge_report.json",
+      "bytes": 872,
+      "sha256": "d3cf9f296107a4ddb0d1e289f045006aa78d8cbcf474310961c785db9d246d5a",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/corruption_events.json",
+      "bytes": 4636808,
+      "sha256": "35a9788d37e28524b83ff9bb42677efc87d5829259de270efc78736d19ced2c0",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/corruption_protocol.json",
+      "bytes": 3258,
+      "sha256": "52038104fcb56a72a26e65496a8248d632eea9450dfc70f6873014c109e81aff",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/full_report.json",
+      "bytes": 17358,
+      "sha256": "fa015bc2c9223605fdc140aea8b45f7eee263342fc81686d845a6fdff72d3270",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/heldout_events.json",
+      "bytes": 547027,
+      "sha256": "e37fd63749659d036da38712b3ac0db4c4204f1084a3ac893d41ef3652f8d6f6",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/heldout_report.json",
+      "bytes": 2297,
+      "sha256": "11742a490fef51b2d211db5e7c512f5db15dfabafa58c18b3cca0867ae5b03df",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/source_manifest.json",
+      "bytes": 13197534,
+      "sha256": "2391c23128f47e201092d8b45a8c65ff1540bdbac16b527b244a4973491b3d4a",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/clean/_tensordict/joint_pos.memmap",
+      "bytes": 8010198,
+      "sha256": "e3165965632e15c6ef5c481487b55d78ea09e510b1e4f1a0ae83eb34525beaeb",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/clean/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "45b0464745c9e7ee037a0bfebbfcd6f6681ec51a0cf6cb793a25c849bd27cd9c",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/clean/_tensordict/root_pos_w.memmap",
+      "bytes": 1144314,
+      "sha256": "a5af703879344c895f9502378474477c7afe6b82bb36ca5a8a3465f54aa49779",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/clean/_tensordict/root_quat_w.memmap",
+      "bytes": 1525752,
+      "sha256": "67e51e05c304bb4b3392f86a91f68a1e177653178d823e1093536de39f952b18",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/clean/id_label.json",
+      "bytes": 63249,
+      "sha256": "3fb1089a3c59beb4fbcfe0c4e271b2dbffa61743099c199a64ccba548c9182cb",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/clean/meta_motion.json",
+      "bytes": 11608,
+      "sha256": "71c5c775b1b6c578eeaad5e33207b1c18c0d809c2e6272f660664ce081ff5592",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S1/_tensordict/joint_pos.memmap",
+      "bytes": 8010198,
+      "sha256": "ee262ec6204587c36c48688fd54faf9da224d04cd1f2a6a08d1bf1fb0cb60ae2",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S1/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "45b0464745c9e7ee037a0bfebbfcd6f6681ec51a0cf6cb793a25c849bd27cd9c",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S1/_tensordict/root_pos_w.memmap",
+      "bytes": 1144314,
+      "sha256": "a5af703879344c895f9502378474477c7afe6b82bb36ca5a8a3465f54aa49779",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S1/_tensordict/root_quat_w.memmap",
+      "bytes": 1525752,
+      "sha256": "67e51e05c304bb4b3392f86a91f68a1e177653178d823e1093536de39f952b18",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S1/id_label.json",
+      "bytes": 63249,
+      "sha256": "3fb1089a3c59beb4fbcfe0c4e271b2dbffa61743099c199a64ccba548c9182cb",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S1/meta_motion.json",
+      "bytes": 11608,
+      "sha256": "71c5c775b1b6c578eeaad5e33207b1c18c0d809c2e6272f660664ce081ff5592",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S2/_tensordict/joint_pos.memmap",
+      "bytes": 8010198,
+      "sha256": "2955f711ee8fd9689e87dbff88f73b790951ded6b3020d93c07d20217a85f6b9",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S2/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "45b0464745c9e7ee037a0bfebbfcd6f6681ec51a0cf6cb793a25c849bd27cd9c",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S2/_tensordict/root_pos_w.memmap",
+      "bytes": 1144314,
+      "sha256": "a5af703879344c895f9502378474477c7afe6b82bb36ca5a8a3465f54aa49779",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S2/_tensordict/root_quat_w.memmap",
+      "bytes": 1525752,
+      "sha256": "67e51e05c304bb4b3392f86a91f68a1e177653178d823e1093536de39f952b18",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S2/id_label.json",
+      "bytes": 63249,
+      "sha256": "3fb1089a3c59beb4fbcfe0c4e271b2dbffa61743099c199a64ccba548c9182cb",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S2/meta_motion.json",
+      "bytes": 11608,
+      "sha256": "71c5c775b1b6c578eeaad5e33207b1c18c0d809c2e6272f660664ce081ff5592",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S3/_tensordict/joint_pos.memmap",
+      "bytes": 8010198,
+      "sha256": "7339cb7c343cd11c01fdff5074940f08e6d7604e2f4b6e5c5eb57f2d9e84040f",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S3/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "45b0464745c9e7ee037a0bfebbfcd6f6681ec51a0cf6cb793a25c849bd27cd9c",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S3/_tensordict/root_pos_w.memmap",
+      "bytes": 1144314,
+      "sha256": "a5af703879344c895f9502378474477c7afe6b82bb36ca5a8a3465f54aa49779",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S3/_tensordict/root_quat_w.memmap",
+      "bytes": 1525752,
+      "sha256": "67e51e05c304bb4b3392f86a91f68a1e177653178d823e1093536de39f952b18",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S3/id_label.json",
+      "bytes": 63249,
+      "sha256": "3fb1089a3c59beb4fbcfe0c4e271b2dbffa61743099c199a64ccba548c9182cb",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_S3/meta_motion.json",
+      "bytes": 11608,
+      "sha256": "71c5c775b1b6c578eeaad5e33207b1c18c0d809c2e6272f660664ce081ff5592",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S1/_tensordict/joint_pos.memmap",
+      "bytes": 8010198,
+      "sha256": "4cf652870d9cd4bff7dc62bb45c373a80f6c7cb692cb982791901bb5cd0a59e1",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S1/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "45b0464745c9e7ee037a0bfebbfcd6f6681ec51a0cf6cb793a25c849bd27cd9c",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S1/_tensordict/root_pos_w.memmap",
+      "bytes": 1144314,
+      "sha256": "a5af703879344c895f9502378474477c7afe6b82bb36ca5a8a3465f54aa49779",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S1/_tensordict/root_quat_w.memmap",
+      "bytes": 1525752,
+      "sha256": "67e51e05c304bb4b3392f86a91f68a1e177653178d823e1093536de39f952b18",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S1/id_label.json",
+      "bytes": 63249,
+      "sha256": "3fb1089a3c59beb4fbcfe0c4e271b2dbffa61743099c199a64ccba548c9182cb",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S1/meta_motion.json",
+      "bytes": 11608,
+      "sha256": "71c5c775b1b6c578eeaad5e33207b1c18c0d809c2e6272f660664ce081ff5592",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S2/_tensordict/joint_pos.memmap",
+      "bytes": 8010198,
+      "sha256": "3a08037c154d39b22dc6b01f8f1dceff406a320e5bd3af2b6e9c8e0efa493c86",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S2/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "45b0464745c9e7ee037a0bfebbfcd6f6681ec51a0cf6cb793a25c849bd27cd9c",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S2/_tensordict/root_pos_w.memmap",
+      "bytes": 1144314,
+      "sha256": "a5af703879344c895f9502378474477c7afe6b82bb36ca5a8a3465f54aa49779",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S2/_tensordict/root_quat_w.memmap",
+      "bytes": 1525752,
+      "sha256": "67e51e05c304bb4b3392f86a91f68a1e177653178d823e1093536de39f952b18",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S2/id_label.json",
+      "bytes": 63249,
+      "sha256": "3fb1089a3c59beb4fbcfe0c4e271b2dbffa61743099c199a64ccba548c9182cb",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S2/meta_motion.json",
+      "bytes": 11608,
+      "sha256": "71c5c775b1b6c578eeaad5e33207b1c18c0d809c2e6272f660664ce081ff5592",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S3/_tensordict/joint_pos.memmap",
+      "bytes": 8010198,
+      "sha256": "519d82b8726add071ca705ae0af5917d2c92dcd788136990effa9691735e8b60",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S3/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "45b0464745c9e7ee037a0bfebbfcd6f6681ec51a0cf6cb793a25c849bd27cd9c",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S3/_tensordict/root_pos_w.memmap",
+      "bytes": 1144314,
+      "sha256": "a5af703879344c895f9502378474477c7afe6b82bb36ca5a8a3465f54aa49779",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S3/_tensordict/root_quat_w.memmap",
+      "bytes": 1525752,
+      "sha256": "67e51e05c304bb4b3392f86a91f68a1e177653178d823e1093536de39f952b18",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S3/id_label.json",
+      "bytes": 63249,
+      "sha256": "3fb1089a3c59beb4fbcfe0c4e271b2dbffa61743099c199a64ccba548c9182cb",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test/raw_heldout_S3/meta_motion.json",
+      "bytes": 11608,
+      "sha256": "71c5c775b1b6c578eeaad5e33207b1c18c0d809c2e6272f660664ce081ff5592",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test_C0_groups.json",
+      "bytes": 570,
+      "sha256": "525b38800ee2c4b869a8afda9645821ef594374b179dad056300ea883515baec",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test_C1_groups.json",
+      "bytes": 572,
+      "sha256": "420d31010ba3f855fdaff3bc95dfbdf755414b5f85e40bee22dce00385fe9087",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/test_manifest.json",
+      "bytes": 161770,
+      "sha256": "71c0467c630a2fbd4063ff6ac18f608385f1183bc2e582fdc9b0d14349840efc",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/clean/_tensordict/joint_pos.memmap",
+      "bytes": 76156584,
+      "sha256": "6e39390b962acad14bd382901d17864f817cf62ca8d76a40aca4318121b38515",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/clean/_tensordict/meta.json",
+      "bytes": 529,
+      "sha256": "565d938901fc14bc16d8d174497591c6ad6cddd5b7ea3ef3379213ac082079fa",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/clean/_tensordict/root_pos_w.memmap",
+      "bytes": 10879512,
+      "sha256": "d23034c8c58fd10e31ad8bb2269d6f2511d81a24f722e9047b64adf1365f3170",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/clean/_tensordict/root_quat_w.memmap",
+      "bytes": 14506016,
+      "sha256": "8ff0a374b465ec95d3788106617c04209512c492a85ff9e9c9168f0a3443a796",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/clean/id_label.json",
+      "bytes": 571741,
+      "sha256": "d4e92fcb18a4d953f00195e8fd6c0d7ffb544226f874c58a9b1b00ed2468e0b9",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/clean/meta_motion.json",
+      "bytes": 110527,
+      "sha256": "868909790ca49dc56e376cfadd0dde6bbb00bbaa0a51b3a793022b5d69aa8acf",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S1/_tensordict/joint_pos.memmap",
+      "bytes": 76156584,
+      "sha256": "42fcf4e521a34c271b3baaeba16f673a97350beca81d413458fd8e35744ee267",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S1/_tensordict/meta.json",
+      "bytes": 529,
+      "sha256": "565d938901fc14bc16d8d174497591c6ad6cddd5b7ea3ef3379213ac082079fa",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S1/_tensordict/root_pos_w.memmap",
+      "bytes": 10879512,
+      "sha256": "d23034c8c58fd10e31ad8bb2269d6f2511d81a24f722e9047b64adf1365f3170",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S1/_tensordict/root_quat_w.memmap",
+      "bytes": 14506016,
+      "sha256": "8ff0a374b465ec95d3788106617c04209512c492a85ff9e9c9168f0a3443a796",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S1/id_label.json",
+      "bytes": 571741,
+      "sha256": "d4e92fcb18a4d953f00195e8fd6c0d7ffb544226f874c58a9b1b00ed2468e0b9",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S1/meta_motion.json",
+      "bytes": 110527,
+      "sha256": "868909790ca49dc56e376cfadd0dde6bbb00bbaa0a51b3a793022b5d69aa8acf",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S2/_tensordict/joint_pos.memmap",
+      "bytes": 76156584,
+      "sha256": "5daec614722718f108f9228c49abec89171aa406d9f64270dea2c3298de38fd5",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S2/_tensordict/meta.json",
+      "bytes": 529,
+      "sha256": "565d938901fc14bc16d8d174497591c6ad6cddd5b7ea3ef3379213ac082079fa",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S2/_tensordict/root_pos_w.memmap",
+      "bytes": 10879512,
+      "sha256": "d23034c8c58fd10e31ad8bb2269d6f2511d81a24f722e9047b64adf1365f3170",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S2/_tensordict/root_quat_w.memmap",
+      "bytes": 14506016,
+      "sha256": "8ff0a374b465ec95d3788106617c04209512c492a85ff9e9c9168f0a3443a796",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S2/id_label.json",
+      "bytes": 571741,
+      "sha256": "d4e92fcb18a4d953f00195e8fd6c0d7ffb544226f874c58a9b1b00ed2468e0b9",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train/raw_S2/meta_motion.json",
+      "bytes": 110527,
+      "sha256": "868909790ca49dc56e376cfadd0dde6bbb00bbaa0a51b3a793022b5d69aa8acf",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train_C0_groups.json",
+      "bytes": 576,
+      "sha256": "361c7829eeb4d2d9f1844e0658933f857644a888d7eb68811f86788fb3c08108",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train_C1_groups.json",
+      "bytes": 578,
+      "sha256": "0128a66381bc5b5e2719bbae28d040575d19acbb79ef907866f8e9a9b61b7f9e",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/train_manifest.json",
+      "bytes": 1474134,
+      "sha256": "b0cd740ab9d71da3bf7c3cea38f8485b50f375ef0af9b90fd3002490c0e03c3b",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/clean/_tensordict/joint_pos.memmap",
+      "bytes": 6435072,
+      "sha256": "c188b742bc4ee24da87fd71c9d574bfe1acd6d29ac29afceea0ac5ee9efbb5c7",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/clean/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "333a0d89cf96125de1da3670eb9cf3515f9dbc1eb4e93aef3f24c0a35a3f6142",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/clean/_tensordict/root_pos_w.memmap",
+      "bytes": 919296,
+      "sha256": "754291b60c0c4147f1b6411a49b231be225f4777192b0a79f22170e62f009aad",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/clean/_tensordict/root_quat_w.memmap",
+      "bytes": 1225728,
+      "sha256": "16330d02bd64cc5ab4a7dc05a9414fc599d573718d1bbeea4d7a989bba397802",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/clean/id_label.json",
+      "bytes": 50793,
+      "sha256": "34723e34efc6c78efc0f30df99db2cb0048c2a945a0b16d6078704ca896c94b4",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/clean/meta_motion.json",
+      "bytes": 9368,
+      "sha256": "7e7a41253b29ef0c82f34289787b630206d4ad0954b93785af53481aadd098ec",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/legacy_clean/_tensordict/joint_pos.memmap",
+      "bytes": 6435072,
+      "sha256": "79b364074807275b36a1f84cc85192f2ec8137ad292fef5f0f005681bbd98a28",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/legacy_clean/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "333a0d89cf96125de1da3670eb9cf3515f9dbc1eb4e93aef3f24c0a35a3f6142",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/legacy_clean/_tensordict/root_pos_w.memmap",
+      "bytes": 919296,
+      "sha256": "754291b60c0c4147f1b6411a49b231be225f4777192b0a79f22170e62f009aad",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/legacy_clean/_tensordict/root_quat_w.memmap",
+      "bytes": 1225728,
+      "sha256": "16330d02bd64cc5ab4a7dc05a9414fc599d573718d1bbeea4d7a989bba397802",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/legacy_clean/id_label.json",
+      "bytes": 50793,
+      "sha256": "34723e34efc6c78efc0f30df99db2cb0048c2a945a0b16d6078704ca896c94b4",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/legacy_clean/meta_motion.json",
+      "bytes": 9368,
+      "sha256": "7e7a41253b29ef0c82f34289787b630206d4ad0954b93785af53481aadd098ec",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S1/_tensordict/joint_pos.memmap",
+      "bytes": 6435072,
+      "sha256": "a038ccda82ad66204284f5515581808832c894be4c9f099767d266c8bd14ec6b",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S1/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "333a0d89cf96125de1da3670eb9cf3515f9dbc1eb4e93aef3f24c0a35a3f6142",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S1/_tensordict/root_pos_w.memmap",
+      "bytes": 919296,
+      "sha256": "754291b60c0c4147f1b6411a49b231be225f4777192b0a79f22170e62f009aad",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S1/_tensordict/root_quat_w.memmap",
+      "bytes": 1225728,
+      "sha256": "16330d02bd64cc5ab4a7dc05a9414fc599d573718d1bbeea4d7a989bba397802",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S1/id_label.json",
+      "bytes": 50793,
+      "sha256": "34723e34efc6c78efc0f30df99db2cb0048c2a945a0b16d6078704ca896c94b4",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S1/meta_motion.json",
+      "bytes": 9368,
+      "sha256": "7e7a41253b29ef0c82f34289787b630206d4ad0954b93785af53481aadd098ec",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S2/_tensordict/joint_pos.memmap",
+      "bytes": 6435072,
+      "sha256": "c5e491e87016c8d590a3319e8c80a2ce7974294fde93c3eefa97cd51868b3732",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S2/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "333a0d89cf96125de1da3670eb9cf3515f9dbc1eb4e93aef3f24c0a35a3f6142",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S2/_tensordict/root_pos_w.memmap",
+      "bytes": 919296,
+      "sha256": "754291b60c0c4147f1b6411a49b231be225f4777192b0a79f22170e62f009aad",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S2/_tensordict/root_quat_w.memmap",
+      "bytes": 1225728,
+      "sha256": "16330d02bd64cc5ab4a7dc05a9414fc599d573718d1bbeea4d7a989bba397802",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S2/id_label.json",
+      "bytes": 50793,
+      "sha256": "34723e34efc6c78efc0f30df99db2cb0048c2a945a0b16d6078704ca896c94b4",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S2/meta_motion.json",
+      "bytes": 9368,
+      "sha256": "7e7a41253b29ef0c82f34289787b630206d4ad0954b93785af53481aadd098ec",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S3/_tensordict/joint_pos.memmap",
+      "bytes": 6435072,
+      "sha256": "0735f42b831263545f3c9cae80568c26ab8c75f810267a6486c03b025cb0eb13",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S3/_tensordict/meta.json",
+      "bytes": 525,
+      "sha256": "333a0d89cf96125de1da3670eb9cf3515f9dbc1eb4e93aef3f24c0a35a3f6142",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S3/_tensordict/root_pos_w.memmap",
+      "bytes": 919296,
+      "sha256": "754291b60c0c4147f1b6411a49b231be225f4777192b0a79f22170e62f009aad",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S3/_tensordict/root_quat_w.memmap",
+      "bytes": 1225728,
+      "sha256": "16330d02bd64cc5ab4a7dc05a9414fc599d573718d1bbeea4d7a989bba397802",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S3/id_label.json",
+      "bytes": 50793,
+      "sha256": "34723e34efc6c78efc0f30df99db2cb0048c2a945a0b16d6078704ca896c94b4",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation/raw_S3/meta_motion.json",
+      "bytes": 9368,
+      "sha256": "7e7a41253b29ef0c82f34289787b630206d4ad0954b93785af53481aadd098ec",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation_C0_groups.json",
+      "bytes": 606,
+      "sha256": "04a251364de58bb1aebad560041e8baa40ac577add0351fc1e2d32e42934d708",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation_C1_groups.json",
+      "bytes": 608,
+      "sha256": "d346b87041e7e10d642e5373d3a8111dd86e3d07a5758ae807ddae127019c2e7",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r2/validation_manifest.json",
+      "bytes": 132673,
+      "sha256": "fd8271c5667282f1611474c96f69074add13d3baf79fcc6aca31ec11a9599cbf",
+      "required": true,
+      "purpose": "exact frozen paired dataset and manifests"
+    },
+    {
+      "path": "dataset/_audit/roban_ominisoma/roban_teacher_50000_r50000_v3/wandb/wandb/offline-run-20260905_141941-roban_teacher_50000_r50000_v3/files/checkpoint_final.pt",
+      "bytes": 66937651,
+      "sha256": "46ef3c507763ee185bcbafae833b154d2e4984e4b5b2e1ca6a3a0f667effc2ff",
+      "required": true,
+      "purpose": "common Teacher warm-start parent"
+    },
+    {
+      "path": "dataset/_audit/roban_ominisoma/roban_pipeline_20260908_091456/finetune/checkpoint_final.pt",
+      "bytes": 66985987,
+      "sha256": "258692caf9c5f5adbd6a85e560543aa8060906c85f034f3c51698dd6182606b6",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/_tensordict/joint_pos.memmap",
+      "bytes": 757109724,
+      "sha256": "debf38dfecc986cede85923663416d60d9ccb2d8ec7f370d8b5fce83c8b3baed",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/_tensordict/meta.json",
+      "bytes": 361,
+      "sha256": "461fe425c1c0686db8469ff8dd124961f6e418d24ff47f2dc4a3f3f5df631d79",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/_tensordict/root_pos_w.memmap",
+      "bytes": 108158532,
+      "sha256": "a1bca220e9dfb5142317ededd71518ec9898fc50af41977a8c4948989ac12b23",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/_tensordict/root_quat_w.memmap",
+      "bytes": 144211376,
+      "sha256": "d536ac936395633f1a5e544720e1a0ca1071cca282ccbff8eda945109b27f571",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/conversion_report.json",
+      "bytes": 27456532,
+      "sha256": "f091fd8d7fbddbe51f34a14270e7cab4dbf6c917faacab4d23afb55694af1cf0",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/failed_files.jsonl",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/id_label.json",
+      "bytes": 5040013,
+      "sha256": "c036027089187067d4c078aac1ec1388edb55466c784ae9b2d0045852deefb6d",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/meta_motion.json",
+      "bytes": 2612951,
+      "sha256": "feba135b229060f54fa02e2fa74a99d83e27905fc4d1976f49603af340a82b31",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/selection_manifest.json",
+      "bytes": 16165960,
+      "sha256": "43ec8a0fb32c3070f0f3e9c4023c66a548ab1c92eafbe600aea7b94cb69e7375",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/selection_manifest.sha256",
+      "bytes": 90,
+      "sha256": "8e3c510c3e2d73acae2a4dc7358d6cde562d54a06f15246192cb66005dbfd443",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/source_manifest.json",
+      "bytes": 27210294,
+      "sha256": "0a5d4504368c42c5bd2fe5fa84320e5facf455971041b0ed74da8c54f953918d",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    },
+    {
+      "path": "dataset/roban/main/train_50000_v1/validation_report.json",
+      "bytes": 12695,
+      "sha256": "2f27c8f849c75b588ede1ff58fd79f347c0ae2fa8136a917026c0fae107f0a9c",
+      "required": false,
+      "purpose": "optional source reconstruction or historical Student diagnostics"
+    }
+  ]
+}

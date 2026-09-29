@@ -1,0 +1,74 @@
+{
+  "date": "2026-09-29T14:03:32.225589+08:00",
+  "status": "DELETED_AND_VERIFIED",
+  "scope": "only redundant RefineTrack files; original data and checkpoints preserved",
+  "files": [
+    {
+      "path": "dataset/roban/refinetrack_v01/r1/source_manifest.json",
+      "bytes": 13197534,
+      "sha256": "2391c23128f47e201092d8b45a8c65ff1540bdbac16b527b244a4973491b3d4a",
+      "replacement": "dataset/roban/refinetrack_v01/r2/source_manifest.json",
+      "reason": "failed r1 exact duplicate of retained r2"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r1/train/clean/meta_motion.json",
+      "bytes": 110527,
+      "sha256": "868909790ca49dc56e376cfadd0dde6bbb00bbaa0a51b3a793022b5d69aa8acf",
+      "replacement": "dataset/roban/refinetrack_v01/r2/train/clean/meta_motion.json",
+      "reason": "failed r1 exact duplicate of retained r2"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r1/train/clean/id_label.json",
+      "bytes": 571741,
+      "sha256": "d4e92fcb18a4d953f00195e8fd6c0d7ffb544226f874c58a9b1b00ed2468e0b9",
+      "replacement": "dataset/roban/refinetrack_v01/r2/train/clean/id_label.json",
+      "reason": "failed r1 exact duplicate of retained r2"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r1/train/clean/_tensordict/root_quat_w.memmap",
+      "bytes": 14506016,
+      "sha256": "8ff0a374b465ec95d3788106617c04209512c492a85ff9e9c9168f0a3443a796",
+      "replacement": "dataset/roban/refinetrack_v01/r2/train/clean/_tensordict/root_quat_w.memmap",
+      "reason": "failed r1 exact duplicate of retained r2"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r1/train/clean/_tensordict/joint_pos.memmap",
+      "bytes": 76156584,
+      "sha256": "6e39390b962acad14bd382901d17864f817cf62ca8d76a40aca4318121b38515",
+      "replacement": "dataset/roban/refinetrack_v01/r2/train/clean/_tensordict/joint_pos.memmap",
+      "reason": "failed r1 exact duplicate of retained r2"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r1/train/clean/_tensordict/root_pos_w.memmap",
+      "bytes": 10879512,
+      "sha256": "d23034c8c58fd10e31ad8bb2269d6f2511d81a24f722e9047b64adf1365f3170",
+      "replacement": "dataset/roban/refinetrack_v01/r2/train/clean/_tensordict/root_pos_w.memmap",
+      "reason": "failed r1 exact duplicate of retained r2"
+    },
+    {
+      "path": "dataset/roban/refinetrack_v01/r1/train/clean/_tensordict/meta.json",
+      "bytes": 529,
+      "sha256": "565d938901fc14bc16d8d174497591c6ad6cddd5b7ea3ef3379213ac082079fa",
+      "replacement": "dataset/roban/refinetrack_v01/r2/train/clean/_tensordict/meta.json",
+      "reason": "failed r1 exact duplicate of retained r2"
+    },
+    {
+      "path": "科研/v0.1/evidence/run_index.json",
+      "bytes": 64890,
+      "sha256": "efe729cbc5ac97bfa50f1a64adb1d28ee7353dc952a4bdc08d66a445a736eec6",
+      "replacement": "科研/v0.1/evidence/run_index_with_evaluations.json",
+      "reason": "same structured training entries retained in complete index"
+    },
+    {
+      "path": "scripts/refinetrack_v01/__pycache__",
+      "bytes": 81744,
+      "reason": "rebuildable Python bytecode cache"
+    },
+    {
+      "path": "tests/refinetrack_v01/__pycache__",
+      "bytes": 3589,
+      "reason": "rebuildable Python bytecode cache"
+    }
+  ],
+  "freed_bytes": 115572666
+}

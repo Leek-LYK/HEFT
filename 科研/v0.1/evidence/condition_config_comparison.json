@@ -1,0 +1,11 @@
+{
+  "train": {
+    "physics_action_reward_observation_termination_algo_equal": true
+  },
+  "adapt": {
+    "physics_action_reward_observation_termination_algo_equal": true
+  },
+  "finetune": {
+    "physics_action_reward_observation_termination_algo_equal": true
+  }
+}

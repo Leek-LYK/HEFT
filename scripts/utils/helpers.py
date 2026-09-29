@@ -332,6 +332,9 @@ def make_env_policy(cfg: DictConfig):
     
     if "policy" in state_dict.keys():
         print(colored("[Info]: Load policy from checkpoint.", "green"))
+        if cfg.get("refinetrack", {}).get("enabled", False):
+            from scripts.refinetrack_v01.runtime import verify_loaded
+            verify_loaded(policy, state_dict["policy"])
         policy.load_state_dict(state_dict["policy"])
     
     if cfg.checkpoint_path is not None:

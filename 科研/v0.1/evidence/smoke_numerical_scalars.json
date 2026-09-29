@@ -1,0 +1,152 @@
+{
+  "C0/train": {
+    "nonfinite/cumulative_recoveries_global": [
+      6.0,
+      7.0,
+      7.0
+    ],
+    "nonfinite/cumulative_simulator_events_global": [
+      6.0,
+      7.0,
+      7.0
+    ],
+    "rollout/reward_max_global": [
+      0.2311658412218094,
+      0.23198747634887695,
+      0.23190739750862122
+    ],
+    "rollout/reward_min_global": [
+      0.0,
+      0.0,
+      0.07048981636762619
+    ],
+    "train/stats/termination/nonfinite_state": [
+      1.0
+    ]
+  },
+  "C0/adapt": {
+    "nonfinite/cumulative_recoveries_global": [
+      7.0,
+      11.0,
+      19.0
+    ],
+    "nonfinite/cumulative_simulator_events_global": [
+      7.0,
+      11.0,
+      19.0
+    ],
+    "rollout/reward_max_global": [
+      0.21107591688632965,
+      0.21195073425769806,
+      0.21294334530830383
+    ],
+    "rollout/reward_min_global": [
+      -0.006382055580615997,
+      -0.05160891264677048,
+      -0.040473565459251404
+    ],
+    "train/stats/termination/nonfinite_state": [
+      0.1666666716337204
+    ]
+  },
+  "C0/finetune": {
+    "nonfinite/cumulative_recoveries_global": [
+      11.0,
+      20.0,
+      30.0
+    ],
+    "nonfinite/cumulative_simulator_events_global": [
+      11.0,
+      20.0,
+      30.0
+    ],
+    "rollout/reward_max_global": [
+      0.20924220979213715,
+      0.21100646257400513,
+      0.21299836039543152
+    ],
+    "rollout/reward_min_global": [
+      -0.1840609610080719,
+      -0.20820015668869019,
+      -0.14851950109004974
+    ],
+    "train/stats/termination/nonfinite_state": [
+      0.0035054173786193132
+    ]
+  },
+  "C1/train": {
+    "nonfinite/cumulative_recoveries_global": [
+      6.0,
+      7.0,
+      7.0
+    ],
+    "nonfinite/cumulative_simulator_events_global": [
+      6.0,
+      7.0,
+      7.0
+    ],
+    "rollout/reward_max_global": [
+      0.23135709762573242,
+      0.231889009475708,
+      0.23163987696170807
+    ],
+    "rollout/reward_min_global": [
+      0.0,
+      0.0,
+      0.03844711184501648
+    ],
+    "train/stats/termination/nonfinite_state": [
+      1.0
+    ]
+  },
+  "C1/adapt": {
+    "nonfinite/cumulative_recoveries_global": [
+      7.0,
+      13.0,
+      22.0
+    ],
+    "nonfinite/cumulative_simulator_events_global": [
+      7.0,
+      13.0,
+      22.0
+    ],
+    "rollout/reward_max_global": [
+      0.21231108903884888,
+      0.21268339455127716,
+      0.21368664503097534
+    ],
+    "rollout/reward_min_global": [
+      -0.007770352065563202,
+      -0.04869447648525238,
+      -0.04522532969713211
+    ],
+    "train/stats/termination/nonfinite_state": [
+      0.1944444477558136
+    ]
+  },
+  "C1/finetune": {
+    "nonfinite/cumulative_recoveries_global": [
+      11.0,
+      24.0,
+      44.0
+    ],
+    "nonfinite/cumulative_simulator_events_global": [
+      11.0,
+      24.0,
+      44.0
+    ],
+    "rollout/reward_max_global": [
+      0.2116042673587799,
+      0.21216949820518494,
+      0.2069489061832428
+    ],
+    "rollout/reward_min_global": [
+      -0.19286316633224487,
+      -0.19663408398628235,
+      -0.16561591625213623
+    ],
+    "train/stats/termination/nonfinite_state": [
+      0.0035009547136723995
+    ]
+  }
+}

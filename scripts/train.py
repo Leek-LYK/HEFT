@@ -104,6 +104,8 @@ def main(cfg: DictConfig):
         )
         cfg.seed = cfg.seed + aa.get_local_rank() * 10000
 
+    from scripts.refinetrack_v01.runtime import check_config
+    check_config(cfg)
     env, policy, vecnorm, primer = make_env_policy(cfg)
     initial_schedule_progress = float(getattr(policy, "progress", 0.0))
 
@@ -285,6 +287,10 @@ def main(cfg: DictConfig):
 
                 data = data_buf.td
 
+            if i == start_iter and cfg.get('refinetrack', {}).get('enabled', False):
+                from scripts.refinetrack_v01.runtime_probe import probe
+                probe(env, policy, carry, output_dir, cfg.refinetrack.condition)
+
             rollout_time = time.perf_counter() - start
             training_start = time.perf_counter()
 
@@ -300,6 +306,9 @@ def main(cfg: DictConfig):
                 diagnostics.before_update(data, iteration=i)
             train_carry = policy.train_op(data, vecnorm)
             training_time = time.perf_counter() - training_start
+            if cfg.get('refinetrack', {}).get('enabled', False):
+                from scripts.refinetrack_v01.runtime import log_iteration
+                log_iteration(output_dir, i, rollout_time, training_time, data.numel())
             if diagnostics is not None:
                 diagnostics.after_update(
                     data,

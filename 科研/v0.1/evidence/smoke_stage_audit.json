@@ -1,0 +1,122 @@
+[
+  {
+    "run": "/data/liyinkun/project_HEFT/dataset/_audit/refinetrack_v01/smoke_final_20260928/C0/train",
+    "stage": "train",
+    "condition": "C0",
+    "status": "PASS",
+    "module_updates": {
+      "actor_teacher": true,
+      "actor_student": false,
+      "encoder_priv": true,
+      "adapt_module": true,
+      "critic": true
+    },
+    "vecnorm_changed": true,
+    "actual_transitions": 393216,
+    "steady_rollout_transitions_s": 81674.61582736217,
+    "steady_total_s": 3.318529525771737,
+    "peak_allocated_bytes": 10948019200,
+    "peak_reserved_bytes": 14382268416,
+    "checkpoint_sha256": "c8d7a85206124ea063c12056b5b1f8772f51a4502cf76589b639ce4e7e77f4d4"
+  },
+  {
+    "run": "/data/liyinkun/project_HEFT/dataset/_audit/refinetrack_v01/smoke_final_20260928/C0/adapt",
+    "stage": "adapt",
+    "condition": "C0",
+    "status": "PASS",
+    "module_updates": {
+      "actor_teacher": false,
+      "actor_student": false,
+      "encoder_priv": false,
+      "adapt_module": true,
+      "critic": false
+    },
+    "vecnorm_changed": false,
+    "actual_transitions": 196608,
+    "steady_rollout_transitions_s": 56933.57140498527,
+    "steady_total_s": 1.4619657858274877,
+    "peak_allocated_bytes": 7577666048,
+    "peak_reserved_bytes": 10196353024,
+    "checkpoint_sha256": "167628cfe459679b51f09b62140bc43f1d6690f85d5b4e6a93ee254e1ccdc1ec"
+  },
+  {
+    "run": "/data/liyinkun/project_HEFT/dataset/_audit/refinetrack_v01/smoke_final_20260928/C0/finetune",
+    "stage": "finetune",
+    "condition": "C0",
+    "status": "PASS",
+    "module_updates": {
+      "actor_teacher": false,
+      "actor_student": true,
+      "encoder_priv": false,
+      "adapt_module": false,
+      "critic": true
+    },
+    "vecnorm_changed": false,
+    "actual_transitions": 393216,
+    "steady_rollout_transitions_s": 58452.41887161095,
+    "steady_total_s": 3.4947527018375695,
+    "peak_allocated_bytes": 10501056512,
+    "peak_reserved_bytes": 14076084224,
+    "checkpoint_sha256": "44b52f40814b193da36f8e0d0d7bf86233a7047588029da5f4642572d5d839f2"
+  },
+  {
+    "run": "/data/liyinkun/project_HEFT/dataset/_audit/refinetrack_v01/smoke_final_20260928/C1/train",
+    "stage": "train",
+    "condition": "C1",
+    "status": "PASS",
+    "module_updates": {
+      "actor_teacher": true,
+      "actor_student": false,
+      "encoder_priv": true,
+      "adapt_module": true,
+      "critic": true
+    },
+    "vecnorm_changed": true,
+    "actual_transitions": 393216,
+    "steady_rollout_transitions_s": 81421.65567372958,
+    "steady_total_s": 3.323434967081994,
+    "peak_allocated_bytes": 10948019200,
+    "peak_reserved_bytes": 14382268416,
+    "checkpoint_sha256": "00a870426d4f09d996414b048be5bfbc47b9ef71e07b6a1a4c6c7683353701ae"
+  },
+  {
+    "run": "/data/liyinkun/project_HEFT/dataset/_audit/refinetrack_v01/smoke_final_20260928/C1/adapt",
+    "stage": "adapt",
+    "condition": "C1",
+    "status": "PASS",
+    "module_updates": {
+      "actor_teacher": false,
+      "actor_student": false,
+      "encoder_priv": false,
+      "adapt_module": true,
+      "critic": false
+    },
+    "vecnorm_changed": false,
+    "actual_transitions": 196608,
+    "steady_rollout_transitions_s": 56220.63444135146,
+    "steady_total_s": 1.4739050078205764,
+    "peak_allocated_bytes": 7577666048,
+    "peak_reserved_bytes": 10196353024,
+    "checkpoint_sha256": "3213ca92ec442b9bd4a0d530f85101f28e576266da282b8c9adfb5cd7a4f4e7e"
+  },
+  {
+    "run": "/data/liyinkun/project_HEFT/dataset/_audit/refinetrack_v01/smoke_final_20260928/C1/finetune",
+    "stage": "finetune",
+    "condition": "C1",
+    "status": "PASS",
+    "module_updates": {
+      "actor_teacher": false,
+      "actor_student": true,
+      "encoder_priv": false,
+      "adapt_module": false,
+      "critic": true
+    },
+    "vecnorm_changed": false,
+    "actual_transitions": 393216,
+    "steady_rollout_transitions_s": 54726.540815630666,
+    "steady_total_s": 3.649423378519714,
+    "peak_allocated_bytes": 10500122112,
+    "peak_reserved_bytes": 14078181376,
+    "checkpoint_sha256": "64de39a8af7b1e08e3d8b7d6955e8718ff58109388aa4a602b5526923cca77ff"
+  }
+]

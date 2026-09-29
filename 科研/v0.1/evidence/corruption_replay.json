@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "events_exactly_replayed": 12942,
+  "rng": "PCG64",
+  "stored_dtype": "float16",
+  "root_checked_by_preflight": true
+}

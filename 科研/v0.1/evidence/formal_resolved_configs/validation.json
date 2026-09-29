@@ -1,0 +1,44 @@
+{
+  "C0_train": {
+    "PASS": true,
+    "envs": 4096,
+    "horizon": 32,
+    "rollouts": 10000,
+    "transitions": 1310720000
+  },
+  "C0_adapt": {
+    "PASS": true,
+    "envs": 4096,
+    "horizon": 16,
+    "rollouts": 1000,
+    "transitions": 65536000
+  },
+  "C0_finetune": {
+    "PASS": true,
+    "envs": 4096,
+    "horizon": 32,
+    "rollouts": 1000,
+    "transitions": 131072000
+  },
+  "C1_train": {
+    "PASS": true,
+    "envs": 4096,
+    "horizon": 32,
+    "rollouts": 10000,
+    "transitions": 1310720000
+  },
+  "C1_adapt": {
+    "PASS": true,
+    "envs": 4096,
+    "horizon": 16,
+    "rollouts": 1000,
+    "transitions": 65536000
+  },
+  "C1_finetune": {
+    "PASS": true,
+    "envs": 4096,
+    "horizon": 32,
+    "rollouts": 1000,
+    "transitions": 131072000
+  }
+}

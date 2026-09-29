@@ -1,0 +1,785 @@
+{
+  "S0": {
+    "cases": 16,
+    "families": 14,
+    "C0_success": 0.0,
+    "C1_success": 0.0,
+    "success_delta_C1_minus_C0": 0.0,
+    "success_delta_family_bootstrap_95": [
+      0.0,
+      0.0
+    ],
+    "common_success_count": 0,
+    "metrics": {
+      "joint_rmse_rad": {
+        "all_pretermination": {
+          "C0": 0.2837398588391842,
+          "C1": 0.28508933972452616
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_position_m": {
+        "all_pretermination": {
+          "C0": 0.1262615376649638,
+          "C1": 0.12633575260689547
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_orientation_rad": {
+        "all_pretermination": {
+          "C0": 0.3627687921999647,
+          "C1": 0.367640362679952
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_linear_velocity_m_s": {
+        "all_pretermination": {
+          "C0": 0.756404048201869,
+          "C1": 0.7595503263785636
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_angular_velocity_rad_s": {
+        "all_pretermination": {
+          "C0": 2.5809602298851733,
+          "C1": 2.5942471331829466
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "keypoint_pos_m": {
+        "all_pretermination": {
+          "C0": 0.0660917722702749,
+          "C1": 0.06540788046835827
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "keypoint_orientation_rad": {
+        "all_pretermination": {
+          "C0": 0.3957761362975808,
+          "C1": 0.3925944240584157
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "action_rate_l2": {
+        "all_pretermination": {
+          "C0": 11.17890953185584,
+          "C1": 11.543662379565943
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "action_amplitude": {
+        "all_pretermination": {
+          "C0": 0.8244678003351782,
+          "C1": 0.8358045193820294
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "effort_l2": {
+        "all_pretermination": {
+          "C0": 7043.911361045768,
+          "C1": 7574.605266096765
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "latent_continuous_mse": {
+        "all_pretermination": {
+          "C0": 0.8268128420478675,
+          "C1": 0.821625477958247
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "teacher_student_action_rmse": {
+        "all_pretermination": {
+          "C0": 1.1024052066703312,
+          "C1": 1.111221142363514
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "quantization_action_rmse": {
+        "all_pretermination": {
+          "C0": 0.9999279480890897,
+          "C1": 0.998163323374248
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "body14_root_relative_pos_mm": {
+        "all_pretermination": {
+          "C0": 61.37093445411849,
+          "C1": 60.735890848303086
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "body14_root_relative_ori_rad": {
+        "all_pretermination": {
+          "C0": 0.3786222333233996,
+          "C1": 0.3751463866736736
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "joint_limit_violation_fraction": {
+        "all_pretermination": {
+          "C0": 0.003447382503791007,
+          "C1": 0.004257375930995845
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "effort_saturation_fraction": {
+        "all_pretermination": {
+          "C0": 0.00039568016495503675,
+          "C1": 0.001474832084151511
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "contact_mismatch_fraction": {
+        "all_pretermination": {
+          "C0": 0.3810968799621499,
+          "C1": 0.39218958951476035
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "abnormal_root_height": {
+        "all_pretermination": {
+          "C0": 0.0,
+          "C1": 0.0
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "abnormal_root_orientation": {
+        "all_pretermination": {
+          "C0": 0.05258705569014124,
+          "C1": 0.05331321596739054
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      }
+    },
+    "own_success_metrics": {
+      "C0": {
+        "joint_rmse_rad": null,
+        "root_position_m": null,
+        "root_orientation_rad": null,
+        "root_linear_velocity_m_s": null,
+        "root_angular_velocity_rad_s": null,
+        "keypoint_pos_m": null,
+        "keypoint_orientation_rad": null,
+        "action_rate_l2": null,
+        "action_amplitude": null,
+        "effort_l2": null,
+        "latent_continuous_mse": null,
+        "teacher_student_action_rmse": null,
+        "quantization_action_rmse": null,
+        "body14_root_relative_pos_mm": null,
+        "body14_root_relative_ori_rad": null,
+        "joint_limit_violation_fraction": null,
+        "effort_saturation_fraction": null,
+        "contact_mismatch_fraction": null,
+        "abnormal_root_height": null,
+        "abnormal_root_orientation": null
+      },
+      "C1": {
+        "joint_rmse_rad": null,
+        "root_position_m": null,
+        "root_orientation_rad": null,
+        "root_linear_velocity_m_s": null,
+        "root_angular_velocity_rad_s": null,
+        "keypoint_pos_m": null,
+        "keypoint_orientation_rad": null,
+        "action_rate_l2": null,
+        "action_amplitude": null,
+        "effort_l2": null,
+        "latent_continuous_mse": null,
+        "teacher_student_action_rmse": null,
+        "quantization_action_rmse": null,
+        "body14_root_relative_pos_mm": null,
+        "body14_root_relative_ori_rad": null,
+        "joint_limit_violation_fraction": null,
+        "effort_saturation_fraction": null,
+        "contact_mismatch_fraction": null,
+        "abnormal_root_height": null,
+        "abnormal_root_orientation": null
+      }
+    },
+    "limitation": "Single training/evaluation seed; cluster CI measures source variation only. All-case errors have unequal survival durations."
+  },
+  "S1": {
+    "cases": 16,
+    "families": 14,
+    "C0_success": 0.0,
+    "C1_success": 0.0,
+    "success_delta_C1_minus_C0": 0.0,
+    "success_delta_family_bootstrap_95": [
+      0.0,
+      0.0
+    ],
+    "common_success_count": 0,
+    "metrics": {
+      "joint_rmse_rad": {
+        "all_pretermination": {
+          "C0": 0.2841028297714939,
+          "C1": 0.28484081794711
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_position_m": {
+        "all_pretermination": {
+          "C0": 0.12840839905825496,
+          "C1": 0.12811905826305678
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_orientation_rad": {
+        "all_pretermination": {
+          "C0": 0.36262352805644504,
+          "C1": 0.3648590472827238
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_linear_velocity_m_s": {
+        "all_pretermination": {
+          "C0": 0.7577495585856705,
+          "C1": 0.7631528765243569
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_angular_velocity_rad_s": {
+        "all_pretermination": {
+          "C0": 2.5238782108769837,
+          "C1": 2.5561592541446316
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "keypoint_pos_m": {
+        "all_pretermination": {
+          "C0": 0.0663278078350927,
+          "C1": 0.06580542840965091
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "keypoint_orientation_rad": {
+        "all_pretermination": {
+          "C0": 0.3970127422914129,
+          "C1": 0.3936473137122029
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "action_rate_l2": {
+        "all_pretermination": {
+          "C0": 11.224831055601037,
+          "C1": 11.942388213519633
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "action_amplitude": {
+        "all_pretermination": {
+          "C0": 0.8266477317541594,
+          "C1": 0.8365415969556226
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "effort_l2": {
+        "all_pretermination": {
+          "C0": 6912.733344447077,
+          "C1": 7528.948641472649
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "latent_continuous_mse": {
+        "all_pretermination": {
+          "C0": 0.8236314371650536,
+          "C1": 0.8243185647330427
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "teacher_student_action_rmse": {
+        "all_pretermination": {
+          "C0": 1.1122853973039624,
+          "C1": 1.1120318403368024
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "quantization_action_rmse": {
+        "all_pretermination": {
+          "C0": 1.0067858736289017,
+          "C1": 0.9992199538474801
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "body14_root_relative_pos_mm": {
+        "all_pretermination": {
+          "C0": 61.59011009569528,
+          "C1": 61.10504171500415
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "body14_root_relative_ori_rad": {
+        "all_pretermination": {
+          "C0": 0.3796668996142297,
+          "C1": 0.3760012989025392
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "joint_limit_violation_fraction": {
+        "all_pretermination": {
+          "C0": 0.0035321258223350704,
+          "C1": 0.00407183535745713
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "effort_saturation_fraction": {
+        "all_pretermination": {
+          "C0": 0.0003106461497657126,
+          "C1": 0.0018493229261260992
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "contact_mismatch_fraction": {
+        "all_pretermination": {
+          "C0": 0.37100403299430296,
+          "C1": 0.4011014468227574
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "abnormal_root_height": {
+        "all_pretermination": {
+          "C0": 0.0,
+          "C1": 0.0
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "abnormal_root_orientation": {
+        "all_pretermination": {
+          "C0": 0.04839062711871267,
+          "C1": 0.049177186555625835
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      }
+    },
+    "own_success_metrics": {
+      "C0": {
+        "joint_rmse_rad": null,
+        "root_position_m": null,
+        "root_orientation_rad": null,
+        "root_linear_velocity_m_s": null,
+        "root_angular_velocity_rad_s": null,
+        "keypoint_pos_m": null,
+        "keypoint_orientation_rad": null,
+        "action_rate_l2": null,
+        "action_amplitude": null,
+        "effort_l2": null,
+        "latent_continuous_mse": null,
+        "teacher_student_action_rmse": null,
+        "quantization_action_rmse": null,
+        "body14_root_relative_pos_mm": null,
+        "body14_root_relative_ori_rad": null,
+        "joint_limit_violation_fraction": null,
+        "effort_saturation_fraction": null,
+        "contact_mismatch_fraction": null,
+        "abnormal_root_height": null,
+        "abnormal_root_orientation": null
+      },
+      "C1": {
+        "joint_rmse_rad": null,
+        "root_position_m": null,
+        "root_orientation_rad": null,
+        "root_linear_velocity_m_s": null,
+        "root_angular_velocity_rad_s": null,
+        "keypoint_pos_m": null,
+        "keypoint_orientation_rad": null,
+        "action_rate_l2": null,
+        "action_amplitude": null,
+        "effort_l2": null,
+        "latent_continuous_mse": null,
+        "teacher_student_action_rmse": null,
+        "quantization_action_rmse": null,
+        "body14_root_relative_pos_mm": null,
+        "body14_root_relative_ori_rad": null,
+        "joint_limit_violation_fraction": null,
+        "effort_saturation_fraction": null,
+        "contact_mismatch_fraction": null,
+        "abnormal_root_height": null,
+        "abnormal_root_orientation": null
+      }
+    },
+    "limitation": "Single training/evaluation seed; cluster CI measures source variation only. All-case errors have unequal survival durations."
+  },
+  "S2": {
+    "cases": 16,
+    "families": 14,
+    "C0_success": 0.0,
+    "C1_success": 0.0,
+    "success_delta_C1_minus_C0": 0.0,
+    "success_delta_family_bootstrap_95": [
+      0.0,
+      0.0
+    ],
+    "common_success_count": 0,
+    "metrics": {
+      "joint_rmse_rad": {
+        "all_pretermination": {
+          "C0": 0.2837276581181472,
+          "C1": 0.2846824146328213
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_position_m": {
+        "all_pretermination": {
+          "C0": 0.12626499646431452,
+          "C1": 0.12629495270654584
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_orientation_rad": {
+        "all_pretermination": {
+          "C0": 0.36273977453824413,
+          "C1": 0.36595212800960597
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_linear_velocity_m_s": {
+        "all_pretermination": {
+          "C0": 0.7564500458396664,
+          "C1": 0.7607565324210779
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "root_angular_velocity_rad_s": {
+        "all_pretermination": {
+          "C0": 2.581009531413116,
+          "C1": 2.587669334355359
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "keypoint_pos_m": {
+        "all_pretermination": {
+          "C0": 0.06609066118821083,
+          "C1": 0.06539915674970984
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "keypoint_orientation_rad": {
+        "all_pretermination": {
+          "C0": 0.39575424118243174,
+          "C1": 0.3926385231162178
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "action_rate_l2": {
+        "all_pretermination": {
+          "C0": 11.170626599999569,
+          "C1": 11.561418370753353
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "action_amplitude": {
+        "all_pretermination": {
+          "C0": 0.8244467339492718,
+          "C1": 0.8350575612776518
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "effort_l2": {
+        "all_pretermination": {
+          "C0": 7036.380479517682,
+          "C1": 7390.928788823309
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "latent_continuous_mse": {
+        "all_pretermination": {
+          "C0": 0.8268471644917984,
+          "C1": 0.8219240429625101
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "teacher_student_action_rmse": {
+        "all_pretermination": {
+          "C0": 1.1026224456003835,
+          "C1": 1.1117514578369745
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "quantization_action_rmse": {
+        "all_pretermination": {
+          "C0": 1.000034556292436,
+          "C1": 0.9991252528531384
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "body14_root_relative_pos_mm": {
+        "all_pretermination": {
+          "C0": 61.369902242790246,
+          "C1": 60.72778935629195
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "body14_root_relative_ori_rad": {
+        "all_pretermination": {
+          "C0": 0.3785916612970085,
+          "C1": 0.37527671585815314
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "joint_limit_violation_fraction": {
+        "all_pretermination": {
+          "C0": 0.003447382503791007,
+          "C1": 0.004071364008217284
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "effort_saturation_fraction": {
+        "all_pretermination": {
+          "C0": 0.00039568016495503675,
+          "C1": 0.0013818261300381877
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "contact_mismatch_fraction": {
+        "all_pretermination": {
+          "C0": 0.3810968799621499,
+          "C1": 0.39218958951476035
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "abnormal_root_height": {
+        "all_pretermination": {
+          "C0": 0.0,
+          "C1": 0.0
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      },
+      "abnormal_root_orientation": {
+        "all_pretermination": {
+          "C0": 0.05258705569014124,
+          "C1": 0.05136009096739054
+        },
+        "common_success": {
+          "C0": null,
+          "C1": null
+        }
+      }
+    },
+    "own_success_metrics": {
+      "C0": {
+        "joint_rmse_rad": null,
+        "root_position_m": null,
+        "root_orientation_rad": null,
+        "root_linear_velocity_m_s": null,
+        "root_angular_velocity_rad_s": null,
+        "keypoint_pos_m": null,
+        "keypoint_orientation_rad": null,
+        "action_rate_l2": null,
+        "action_amplitude": null,
+        "effort_l2": null,
+        "latent_continuous_mse": null,
+        "teacher_student_action_rmse": null,
+        "quantization_action_rmse": null,
+        "body14_root_relative_pos_mm": null,
+        "body14_root_relative_ori_rad": null,
+        "joint_limit_violation_fraction": null,
+        "effort_saturation_fraction": null,
+        "contact_mismatch_fraction": null,
+        "abnormal_root_height": null,
+        "abnormal_root_orientation": null
+      },
+      "C1": {
+        "joint_rmse_rad": null,
+        "root_position_m": null,
+        "root_orientation_rad": null,
+        "root_linear_velocity_m_s": null,
+        "root_angular_velocity_rad_s": null,
+        "keypoint_pos_m": null,
+        "keypoint_orientation_rad": null,
+        "action_rate_l2": null,
+        "action_amplitude": null,
+        "effort_l2": null,
+        "latent_continuous_mse": null,
+        "teacher_student_action_rmse": null,
+        "quantization_action_rmse": null,
+        "body14_root_relative_pos_mm": null,
+        "body14_root_relative_ori_rad": null,
+        "joint_limit_violation_fraction": null,
+        "effort_saturation_fraction": null,
+        "contact_mismatch_fraction": null,
+        "abnormal_root_height": null,
+        "abnormal_root_orientation": null
+      }
+    },
+    "limitation": "Single training/evaluation seed; cluster CI measures source variation only. All-case errors have unequal survival durations."
+  }
+}

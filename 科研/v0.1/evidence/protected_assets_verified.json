@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "files": {
+    "dataset/roban/main/train_50000_v1/meta_motion.json": "feba135b229060f54fa02e2fa74a99d83e27905fc4d1976f49603af340a82b31",
+    "dataset/roban/main/train_50000_v1/id_label.json": "c036027089187067d4c078aac1ec1388edb55466c784ae9b2d0045852deefb6d",
+    "dataset/roban/main/train_50000_v1/selection_manifest.json": "43ec8a0fb32c3070f0f3e9c4023c66a548ab1c92eafbe600aea7b94cb69e7375",
+    "dataset/roban/main/train_50000_v1/conversion_report.json": "f091fd8d7fbddbe51f34a14270e7cab4dbf6c917faacab4d23afb55694af1cf0",
+    "dataset/roban/main/train_50000_v1/_tensordict/meta.json": "461fe425c1c0686db8469ff8dd124961f6e418d24ff47f2dc4a3f3f5df631d79",
+    "dataset/roban/main/train_50000_v1/_tensordict/joint_pos.memmap": "debf38dfecc986cede85923663416d60d9ccb2d8ec7f370d8b5fce83c8b3baed",
+    "dataset/roban/main/train_50000_v1/_tensordict/root_pos_w.memmap": "a1bca220e9dfb5142317ededd71518ec9898fc50af41977a8c4948989ac12b23",
+    "dataset/roban/main/train_50000_v1/_tensordict/root_quat_w.memmap": "d536ac936395633f1a5e544720e1a0ca1071cca282ccbff8eda945109b27f571",
+    "active_adaptation/assets/roban/mjcf/biped_s17_verified_handball_fixedhead.xml": "05ef4d4946803de21c0445d11187b7c4316e57654d7b929a57943741c4d553ab",
+    "dataset/_audit/roban_ominisoma/roban_teacher_50000_r50000_v3/wandb/wandb/offline-run-20260905_141941-roban_teacher_50000_r50000_v3/files/checkpoint_final.pt": "46ef3c507763ee185bcbafae833b154d2e4984e4b5b2e1ca6a3a0f667effc2ff",
+    "dataset/_audit/roban_ominisoma/roban_adapt_50000_20260907_203222/checkpoint_final.pt": "f12fbad18a9846fa36683ef522af5101a07362fd81f48511cf77719eb65429e8",
+    "dataset/_audit/roban_ominisoma/roban_adapt_50000_continue5000_v1/checkpoint_final.pt": "91180a3e163158007487c102673b280890f67c0dff99d40cc2f79870c04a30be",
+    "dataset/_audit/roban_ominisoma/roban_pipeline_20260908_091456/finetune/checkpoint_final.pt": "258692caf9c5f5adbd6a85e560543aa8060906c85f034f3c51698dd6182606b6",
+    "dataset/_audit/roban_ominisoma/deploy_our_heft_20260908/policy_project_heft_finetune.onnx": "809c987a3f21db4d50c8c38f1186845b2870a9d64ede85def5c916845dbf233e"
+  }
+}

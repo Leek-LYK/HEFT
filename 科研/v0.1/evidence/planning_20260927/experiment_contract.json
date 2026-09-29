@@ -1,0 +1,337 @@
+{
+  "schema_version": 1,
+  "project_version": "RefineTrack-TS v0.1",
+  "status": "DRAFT_NOT_FROZEN",
+  "formal_training_allowed": false,
+  "created_date": "2026-09-27",
+  "git": {
+    "branch": "roban/RefineTrack/v0.1",
+    "base": "52d8d9a5c1500536facbdc162b4e9670363dc5ec",
+    "implementation_commit": null,
+    "implementation_diff_sha256": null,
+    "auto_commit": false,
+    "auto_push": false
+  },
+  "robot": {
+    "name": "roban_s17",
+    "asset": "active_adaptation/assets/roban/mjcf/biped_s17_verified_handball_fixedhead.xml",
+    "sha256": "05ef4d4946803de21c0445d11187b7c4316e57654d7b929a57943741c4d553ab",
+    "action_dim": 21,
+    "policy_obs_dim": 1313,
+    "priv_obs_dim": 4270,
+    "critic_extra_dim": 90,
+    "latent_dim": 40,
+    "student_quantizer_scale": 4.499549865722656,
+    "action_type": "absolute_position_target",
+    "policy_dt": 0.02,
+    "physics_dt": 0.005
+  },
+  "dataset": {
+    "clean_source": "dataset/roban/main/train_50000_v1",
+    "selected_source_files": 50000,
+    "effective_motions": 45213,
+    "effective_unique_source_paths": 45198,
+    "stored_frames": 18026422,
+    "fps": 50,
+    "quaternion": "wxyz",
+    "joint_order_source": "meta_motion.json and ROBAN_JOINT_ORDER",
+    "source_hashes": "evidence/provenance.json",
+    "output_root_proposed": "dataset/roban/refinetrack_v01",
+    "root_corruption": false,
+    "canonicalization_proposed": "clip q to actual joint limits before FK; preserve legacy default and source",
+    "canonicalization_bridge_report": null,
+    "paired_manifest": null,
+    "paired_manifest_sha256": null
+  },
+  "split": {
+    "status": "not_generated",
+    "unit": "audited source family; all segments and proven variants grouped",
+    "seed_proposed": 20260927,
+    "fractions_proposed": [
+      0.8,
+      0.1,
+      0.1
+    ],
+    "algorithm_proposed": "sha256(split-v1|seed|family_id) first 8 bytes unsigned big-endian / 2**64",
+    "manifest": null,
+    "sha256": null,
+    "pretraining_exposure": "potentially_seen; not pretraining-unseen",
+    "external_unseen_manifest": null
+  },
+  "corruption": {
+    "version": "joint_v1_draft",
+    "mode_proposed": "offline deterministic minimal memdataset pairs",
+    "train_types_proposed": [
+      "jitter",
+      "offset",
+      "burst",
+      "correlated_noise"
+    ],
+    "heldout_types_proposed": [
+      "jump",
+      "drift",
+      "hold",
+      "seam"
+    ],
+    "train_severities": [
+      "S0",
+      "S1",
+      "S2"
+    ],
+    "validation_selection_severities": [
+      "S0",
+      "S1",
+      "S2"
+    ],
+    "test_severities": [
+      "S0",
+      "S1",
+      "S2",
+      "S3"
+    ],
+    "train_mixture_proposed": [
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333
+    ],
+    "scale_proposed": "per-joint train-only P95(abs one-frame q difference), mirror-pooled",
+    "severity_factors_proposed": {
+      "S0": 0,
+      "S1": 0.5,
+      "S2": 1,
+      "S3": 2
+    },
+    "duration_proposed": "W=round(median_group(motion_range_median/delta1_p95)); S1 W, S2 2W, S3 4W; type-specific definitions in 02",
+    "train_statistics": null,
+    "train_statistics_sha256": null,
+    "generator_commit": null,
+    "generator_sha256": null,
+    "rng_proposed": "PCG64 with pinned numpy version",
+    "seed_key": "protocol|split|pair_id|type|severity|replica|master_seed",
+    "seeds_final": null,
+    "disable_legacy_student_motion_randomization": true
+  },
+  "information_boundary": {
+    "teacher_policy": "raw policy 1313 + continuous clean/simulator z_T",
+    "student_policy": "raw policy 1313 + Q(adapter(policy)); no clean/priv/metadata",
+    "teacher_encoder": "existing clean reference and simulator priv 4270",
+    "critic_reward": "clean and simulator privilege allowed",
+    "student_reference_offsets": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      -1,
+      -2,
+      -4,
+      -8
+    ],
+    "teacher_reference_offsets": [
+      0,
+      1,
+      2,
+      4,
+      8,
+      12,
+      16,
+      20,
+      -1,
+      -2,
+      -4,
+      -8
+    ],
+    "new_deployment_inputs": [],
+    "no_leak_test_report": null
+  },
+  "physics": {
+    "mode": "nominal_plane",
+    "payload_variation": false,
+    "external_force": false,
+    "rough_terrain": false,
+    "friction_variation": false,
+    "motor_dr": false,
+    "gravity_dr": false,
+    "joint_offset_dr": false,
+    "com_dr": false,
+    "alpha_proposed": [
+      0.9,
+      0.9
+    ],
+    "max_delay_proposed": 0,
+    "torque_limit_scale_proposed": [
+      1,
+      1
+    ],
+    "boot_override_proposed": false,
+    "observation_noise_proposed": 0,
+    "resolved_config_sha256": null,
+    "actual_sim_parameter_report": null
+  },
+  "stages": {
+    "train": {
+      "parent": "dataset/_audit/roban_ominisoma/roban_teacher_50000_r50000_v3/wandb/wandb/offline-run-20260905_141941-roban_teacher_50000_r50000_v3/files/checkpoint_final.pt",
+      "rollout": "teacher",
+      "updates": [
+        "actor_teacher",
+        "encoder_priv",
+        "critic",
+        "adapt_module_estimator"
+      ],
+      "fixed": [
+        "actor_student"
+      ],
+      "vecnorm": "train",
+      "loss": "PPO+entropy+value+symmetry+predictability regularizer; separate continuous estimator MSE",
+      "horizon": 32,
+      "formal_rollouts": null
+    },
+    "adapt": {
+      "parent": "same-seed selected new Teacher",
+      "rollout": "student_quantized",
+      "updates": [
+        "adapt_module"
+      ],
+      "fixed": [
+        "actor_teacher",
+        "encoder_priv",
+        "actor_student",
+        "critic",
+        "vecnorm"
+      ],
+      "loss": "continuous latent MSE on Student states",
+      "horizon": 16,
+      "formal_rollouts": null
+    },
+    "finetune": {
+      "parent": "same-seed selected new Adapt",
+      "rollout": "student_quantized",
+      "updates": [
+        "actor_student",
+        "critic"
+      ],
+      "fixed": [
+        "adapt_module",
+        "actor_teacher",
+        "encoder_priv",
+        "vecnorm"
+      ],
+      "loss": "Student PPO with clean training reward",
+      "horizon": 32,
+      "formal_rollouts": null
+    }
+  },
+  "seeds": {
+    "train_proposed": [
+      0,
+      1,
+      2
+    ],
+    "eval_initial_state_proposed": [
+      100,
+      101,
+      102,
+      103,
+      104
+    ],
+    "eval_corruption_replicas_proposed": 3,
+    "final_frozen": false
+  },
+  "comparators": [
+    "B0_frozen_student",
+    "C_clean_continuation",
+    "N_direct_noisy_ppo_adapter_joint_update",
+    "N_raw_teacher_adapt_finetune",
+    "T_clean_guided",
+    "A_student_adapt",
+    "F_student_finetune"
+  ],
+  "fairness": {
+    "T_vs_Nraw": "same Teacher parent, stage budgets, nominal physics, data and validation opportunities",
+    "F_vs_Ndirect": "equal additional total environment transitions, disclose optimizer updates/walltime and different common-parent comparison tracks",
+    "primary_targets": "clean",
+    "test_selection": false
+  },
+  "evaluation": {
+    "protocol": "05_评价与验收协议.md",
+    "primary": [
+      "success",
+      "early_termination",
+      "completion"
+    ],
+    "tracking": [
+      "joint_rmse",
+      "root_relative_body14_pos",
+      "root_relative_body14_ori",
+      "keypoint13",
+      "root_world_xy_if_meaningful",
+      "root_z",
+      "root_orientation",
+      "root_local_linear_velocity",
+      "root_local_angular_velocity"
+    ],
+    "clean_fidelity": [
+      "amplitude",
+      "speed",
+      "phase_lag",
+      "fast_motion_subset"
+    ],
+    "aggregate": "motion equal weight; paired family-cluster bootstrap; training-seed strata",
+    "confidence_level": 0.95,
+    "baseline_repeat_report": null,
+    "clean_noninferiority_margin": null,
+    "selection_rule_final": null,
+    "case_manifest": null,
+    "case_manifest_sha256": null,
+    "evaluator_commit": null
+  },
+  "baseline_checkpoints": {
+    "teacher": {
+      "path": "dataset/_audit/roban_ominisoma/roban_teacher_50000_r50000_v3/wandb/wandb/offline-run-20260905_141941-roban_teacher_50000_r50000_v3/files/checkpoint_final.pt",
+      "sha256": "46ef3c507763ee185bcbafae833b154d2e4984e4b5b2e1ca6a3a0f667effc2ff",
+      "exists": true
+    },
+    "adapt_initial": {
+      "path": "dataset/_audit/roban_ominisoma/roban_adapt_50000_20260907_203222/checkpoint_final.pt",
+      "sha256": "f12fbad18a9846fa36683ef522af5101a07362fd81f48511cf77719eb65429e8",
+      "exists": true
+    },
+    "adapt_final": {
+      "path": "dataset/_audit/roban_ominisoma/roban_adapt_50000_continue5000_v1/checkpoint_final.pt",
+      "sha256": "91180a3e163158007487c102673b280890f67c0dff99d40cc2f79870c04a30be",
+      "exists": true
+    },
+    "finetune": {
+      "path": "dataset/_audit/roban_ominisoma/roban_pipeline_20260908_091456/finetune/checkpoint_final.pt",
+      "sha256": "258692caf9c5f5adbd6a85e560543aa8060906c85f034f3c51698dd6182606b6",
+      "exists": true
+    },
+    "onnx": {
+      "path": "dataset/_audit/roban_ominisoma/deploy_our_heft_20260908/policy_project_heft_finetune.onnx",
+      "sha256": "809c987a3f21db4d50c8c38f1186845b2870a9d64ede85def5c916845dbf233e",
+      "exists": true
+    }
+  },
+  "logging": {
+    "wandb": "disabled",
+    "tensorboard": true,
+    "run_root_proposed": "dataset/_audit/roban_ominisoma/refinetrack_v01",
+    "research_root": "科研/v0.1",
+    "optimizer_exact_resume": false
+  },
+  "freeze_requirements": [
+    "family split and train-only calibration",
+    "paired manifest hashes and S0/root invariants",
+    "reference canonicalization bridge",
+    "nominal actual model audit",
+    "no-leak/freeze/roundtrip tests",
+    "baseline natural-variation report",
+    "final budgets/seeds/evaluator/selection protocol",
+    "implementation commit or immutable diff hash"
+  ],
+  "amendment_policy": "Before formal training, freeze a fully resolved contract and record its SHA-256 in run metadata. Results go to 06/07; later changes require a new contract revision, never rewriting frozen protocol with results."
+}

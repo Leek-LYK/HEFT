@@ -1,0 +1,26 @@
+{
+  "C0/train": {
+    "policy_finite": true,
+    "vecnorm_finite": true
+  },
+  "C0/adapt": {
+    "policy_finite": true,
+    "vecnorm_finite": true
+  },
+  "C0/finetune": {
+    "policy_finite": true,
+    "vecnorm_finite": true
+  },
+  "C1/train": {
+    "policy_finite": true,
+    "vecnorm_finite": true
+  },
+  "C1/adapt": {
+    "policy_finite": true,
+    "vecnorm_finite": true
+  },
+  "C1/finetune": {
+    "policy_finite": true,
+    "vecnorm_finite": true
+  }
+}
