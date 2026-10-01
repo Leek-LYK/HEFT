@@ -207,3 +207,10 @@ dataset
 l7_sim2real/build/
 l7_sim2real/install/
 l7_sim2real/log/
+
+# Local experiment logs, checkpoints and validation artifacts
+/logs/
+
+# Local references outside the reviewed XWBC baseline (see docs/xwbc_v0.1基线.md)
+/paper/X-WBC.pdf
+/active_adaptation/assets/roban/urdf/biped_s17_verified_handball_fixedhead.urdf

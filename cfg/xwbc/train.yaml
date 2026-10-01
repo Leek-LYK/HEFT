@@ -1,0 +1,19 @@
+# One process, one B200, two robot pools. Single-stage direct PPO; no loads.
+dataset: dataset/xwbc/paired_10k_v1
+variant: shared
+seed: 0
+num_envs: 8192  # per robot, total 16384; validated on one B200
+updates: 2500 # budget, evaluated by learning curves; no automatic stage chaining
+rollout_steps: 32
+history: 8
+token_dim: 128
+hidden: [512, 512, 256]
+learning_rate: 0.0001
+epochs: 3
+minibatch_size: 8192
+clip: 0.2
+entropy_weight: 0.005
+value_weight: 0.5
+alignment_weight: 1.0
+max_grad_norm: 1.0
+checkpoint_interval: 250

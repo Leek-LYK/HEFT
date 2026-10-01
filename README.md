@@ -8,6 +8,16 @@
 This repository contains training, evaluation, export, and deployment-facing assets for
 humanoid whole-body motion tracking.
 
+## Cross-embodiment research (XWBC)
+
+The research workflow trains a shared controller for Human/G1/Roban motion
+commands and G1/Roban execution on a single B200. It uses direct PPO with no
+payload augmentation. The v0.1 shared seed-0 run has completed 2,500 updates;
+formal six-route evaluation and comparison budgets are pending. Start with
+`DRY_RUN=1 bash scripts/run_xwbc.sh train` to preview the command. See the
+[v0.1 reproducible baseline](docs/xwbc_v0.1基线.md) for evidence, CPU checks,
+data requirements and the [experiment instructions](docs/xwbc正式实验.md).
+
 > **Branch guide**
 >
 > - The **main branch** is the official implementation of
