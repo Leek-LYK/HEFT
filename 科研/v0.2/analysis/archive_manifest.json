@@ -1,0 +1,61 @@
+{
+  "archived_on": "2026-10-07",
+  "purpose": "保留已有研究图及第5600轮同期分析附件；未重跑实验或重算统计。",
+  "files": [
+    {
+      "original_path": "logs/v0.2/refinement_20261005/paired_improvements.png",
+      "archived_path": "科研/v0.2/analysis/refinement_20261005/paired_improvements.png",
+      "bytes": 165544,
+      "sha256": "a2740f18cc3575cb417f6b89e7729faa6850621e61830d12cf1af7ded794ac07"
+    },
+    {
+      "original_path": "logs/v0.2/no_c_ablation_20261005/test_paired_intervals.png",
+      "archived_path": "科研/v0.2/analysis/no_c_ablation_20261005/test_paired_intervals.png",
+      "bytes": 63023,
+      "sha256": "9d93aaf73576208b1d072009a9c0e3b65174e6d432e27f401d6573c80dfd1ae3"
+    },
+    {
+      "original_path": "logs/v0.2/no_c_ablation_20261005/endpoint_comparison.png",
+      "archived_path": "科研/v0.2/analysis/no_c_ablation_20261005/endpoint_comparison.png",
+      "bytes": 73743,
+      "sha256": "32745311be4865c9d2f0bd5c861b20c86f2ecf7bec1439eb994ed80d45368462"
+    },
+    {
+      "original_path": "logs/v0.2/no_c_ablation_20261005/training_diagnostics.png",
+      "archived_path": "科研/v0.2/analysis/no_c_ablation_20261005/training_diagnostics.png",
+      "bytes": 202999,
+      "sha256": "0e1e277dea71176d4716384d6c689fd2bdfb5230689390e807f8dddfd596ca21"
+    },
+    {
+      "original_path": "logs/v0.2/unified_20261006/test_comparison.png",
+      "archived_path": "科研/v0.2/analysis/unified_20261006/test_comparison.png",
+      "bytes": 91734,
+      "sha256": "c2422532960f26f56b05bc47d864919c7cf24809752cbed48febae9ec186abf4"
+    },
+    {
+      "original_path": "logs/v0.2/unified_20261006/curriculum_diagnostics.png",
+      "archived_path": "科研/v0.2/analysis/unified_20261006/curriculum_diagnostics.png",
+      "bytes": 122025,
+      "sha256": "784791be771fe98cf9e89de0e97ae5af9091cc3b444ccc214955ce5bc975f862"
+    },
+    {
+      "original_path": "logs/v0.2/transformer_20261006/analysis_5600/training_comparison.png",
+      "archived_path": "科研/v0.2/analysis/transformer_20261006/analysis_5600/training_comparison.png",
+      "bytes": 300591,
+      "sha256": "86b6af6957ff38207ffdc2ec9b27b3ce58a76b71e32e45ab915ed6c5a69e512f"
+    },
+    {
+      "original_path": "logs/v0.2/transformer_20261006/analysis_5600/comparison.json",
+      "archived_path": "科研/v0.2/analysis/transformer_20261006/analysis_5600/comparison.json",
+      "bytes": 2474,
+      "sha256": "8dc6dee57b030d9e62fb961f5d32658b670d46460127249f2faec1bd3a552bee"
+    },
+    {
+      "original_path": "logs/v0.2/transformer_20261006/analysis_5600/compare_training.py",
+      "archived_path": "科研/v0.2/analysis/transformer_20261006/analysis_5600/compare_training.py",
+      "bytes": 8088,
+      "sha256": "3d6d4640bfe8b2ce09d537100af7229fa3950e6982e9a371cf6d976cd625843c"
+    }
+  ],
+  "generator_note": "compare_training.py 保留原始生成逻辑和日志路径，仅作来源记录；原始指标快照独立保存，重跑应使用新输出目录。"
+}

@@ -16,18 +16,23 @@ def mlp(dim, widths):
 
 
 class XWBCPolicy(nn.Module):
-    def __init__(self, command_dims, proprio_dims, action_dims, token_dim=128, hidden=(512, 512, 256), variant='shared'):
+    def __init__(self, command_dims, proprio_dims, action_dims, token_dim=128, hidden=(512, 512, 256), variant='shared', encoder_hidden=None, transformer=None):
         super().__init__()
         if variant not in ('shared', 'independent', 'no_align'):
             raise ValueError(variant)
         self.variant = variant
         self.robots = tuple(action_dims)
+        encoder_hidden = [256] if encoder_hidden is None else list(encoder_hidden)
         self.constructor = dict(command_dims=command_dims, proprio_dims=proprio_dims, action_dims=action_dims,
-                                token_dim=token_dim, hidden=list(hidden), variant=variant)
+                                token_dim=token_dim, hidden=list(hidden), variant=variant, encoder_hidden=encoder_hidden)
         groups = self.robots if variant == 'independent' else ('shared',)
-        self.encoders = nn.ModuleDict({g: nn.ModuleDict({s: mlp(command_dims[s], [256, token_dim]) for s in SOURCES}) for g in groups})
+        self.encoders = nn.ModuleDict({g: nn.ModuleDict({s: mlp(command_dims[s], [*encoder_hidden, token_dim]) for s in SOURCES}) for g in groups})
         self.backbones = nn.ModuleDict({g: mlp(token_dim*2, hidden) for g in groups})
-        self.proprio = nn.ModuleDict({r: mlp(proprio_dims[r], [256, token_dim]) for r in self.robots})
+        if transformer is not None:
+            from active_adaptation.learning.modules.xwbc_transformer import FusionTransformer
+            self.constructor['transformer'] = dict(transformer)
+            self.backbones = nn.ModuleDict({g:FusionTransformer([token_dim,token_dim],hidden[-1],**transformer) for g in groups})
+        self.proprio = nn.ModuleDict({r: mlp(proprio_dims[r], [*encoder_hidden, token_dim]) for r in self.robots})
         self.heads = nn.ModuleDict({r: nn.Linear(hidden[-1], action_dims[r]) for r in self.robots})
         self.critics = nn.ModuleDict({r: nn.Sequential(mlp(proprio_dims[r]+2*action_dims[r]+9, [512, 256]), nn.Linear(256, 1)) for r in self.robots})
         self.log_std = nn.ParameterDict({r: nn.Parameter(torch.zeros(action_dims[r])) for r in self.robots})

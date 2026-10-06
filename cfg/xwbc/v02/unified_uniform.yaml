@@ -1,0 +1,27 @@
+_base_: source_adaptation.yaml
+method: unified_six_route_teacher
+updates: 4300
+num_envs: 1024
+rollout_steps: 16
+supervised_steps: 32
+batch_size: 2048
+learning_rate: 0.0001
+learning_rate_final: 0.00001
+schedule_updates: 4300
+checkpoint_interval: 500
+anchor_weight: 0.0
+train_sources: true
+init_seed: 20261006
+teacher_warmup: 20
+teacher_decay: 500
+curriculum_hold: 500
+curriculum_decay: 1000
+evaluation_reference: logs/v0.2/no_c_ablation_20261005/direct_e_run01
+budget_schedule:
+  - until_update: 4000
+    supervised_steps: 32
+    batch_size: 2048
+  - until_update: 4300
+    supervised_steps: 16
+    batch_size: 1024
+source_sampling: uniform

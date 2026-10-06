@@ -1,0 +1,83 @@
+{
+  "checked_at": "2026-10-06T21:53:56.277520+08:00",
+  "common_endpoint": 5600,
+  "window": [
+    5101,
+    5600
+  ],
+  "transitions_per_teacher": 734003200,
+  "ppo_optimizer_steps_per_teacher": 268800,
+  "configs_and_environments_matched": true,
+  "snapshot_progress": {
+    "MLP/g1": {
+      "observed_update": 10000,
+      "compared_update": 5600
+    },
+    "MLP/roban": {
+      "observed_update": 10000,
+      "compared_update": 5600
+    },
+    "Transformer/g1": {
+      "observed_update": 5787,
+      "compared_update": 5600
+    },
+    "Transformer/roban": {
+      "observed_update": 5668,
+      "compared_update": 5600
+    }
+  },
+  "means": {
+    "MLP/g1": {
+      "reward": 0.1542696509361267,
+      "policy_loss": -0.012964750731999326,
+      "value_loss": 0.08372376712318509,
+      "kl": 0.016352994088285413,
+      "entropy": 24.70524926630656,
+      "grad_norm": 1.998946855624517,
+      "done_fraction": 0.005350601196289062,
+      "recovery_fraction": 0.0,
+      "recovery_events_window": 0,
+      "recoveries_total": 0,
+      "elapsed_seconds": 35753.64592375199
+    },
+    "MLP/roban": {
+      "reward": 0.17466299879550934,
+      "policy_loss": -0.009580351714786958,
+      "value_loss": 0.10820052458454545,
+      "kl": 0.014156259102491277,
+      "entropy": 19.16652840002378,
+      "grad_norm": 2.4659922220110895,
+      "done_fraction": 0.005363235473632813,
+      "recovery_fraction": 1.80511474609375e-05,
+      "recovery_events_window": 1183,
+      "recoveries_total": 16851,
+      "elapsed_seconds": 35490.76217590703
+    },
+    "Transformer/g1": {
+      "reward": 0.13555223947763442,
+      "policy_loss": -0.023748724232313785,
+      "value_loss": 0.07851844397800353,
+      "kl": 0.04084089289652184,
+      "entropy": 28.691317647298177,
+      "grad_norm": 2.0755969897856317,
+      "done_fraction": 0.005387649536132812,
+      "recovery_fraction": 0.0,
+      "recovery_events_window": 0,
+      "recoveries_total": 0,
+      "elapsed_seconds": 27897.728059659014
+    },
+    "Transformer/roban": {
+      "reward": 0.1600043804049492,
+      "policy_loss": -0.02298307182703138,
+      "value_loss": 0.10739613617925595,
+      "kl": 0.03648040773064713,
+      "entropy": 21.828325285832086,
+      "grad_norm": 2.4647845282057923,
+      "done_fraction": 0.005409011840820313,
+      "recovery_fraction": 2.36968994140625e-05,
+      "recovery_events_window": 1553,
+      "recoveries_total": 20059,
+      "elapsed_seconds": 28485.433377099107
+    }
+  }
+}

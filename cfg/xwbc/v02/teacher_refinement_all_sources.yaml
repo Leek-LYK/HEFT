@@ -1,0 +1,11 @@
+_base_: source_adaptation.yaml
+method: six_source_teacher_refinement_all_sources
+updates: 300
+num_envs: 1024
+rollout_steps: 16
+supervised_steps: 16
+batch_size: 1024
+learning_rate: 0.00001
+checkpoint_interval: 100
+anchor_weight: 0.1
+train_sources: true

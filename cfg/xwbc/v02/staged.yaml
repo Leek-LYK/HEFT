@@ -1,0 +1,48 @@
+# v0.2 uses run02 context/model capacity. A/B/C are learning dependencies, not payload stages.
+dataset: dataset/xwbc/simple_5k_v02
+seed: 0
+history: 8 # legacy field; history_steps takes precedence
+history_steps: [0, 1, 2, 3, 4, 8, 12, 16, 20]
+action_history: 8
+command_offsets: [0, 1, 2, 4, 8, 12, 16, 20, -1, -2, -4, -8]
+token_dim: 256
+encoder_hidden: [512]
+hidden: [512, 512, 256]
+num_envs: 1024
+updates: 2000
+rollout_steps: 16
+learning_rate: 0.0001
+checkpoint_interval: 250
+replay_capacity: 32768 # per target, uniform reservoir over all visited states
+supervised_steps: 32
+batch_size: 2048
+max_grad_norm: 1.0
+stage_a:
+  num_envs: 4096
+  updates: 10000
+  rollout_steps: 32
+  hidden: [1024, 1024, 512]
+  epochs: 3
+  minibatch_size: 8192
+  clip: 0.2
+  entropy_weight: 0.005
+  value_weight: 0.5
+stage_b:
+  warmup_updates: 20
+  teacher_decay_updates: 500
+stage_c:
+  human_decay_updates: 300
+  token_weight: 1.0
+  action_weight: 1.0
+acceptance:
+  # 2026-10-04: prioritize cross-embodiment completion; retain world error as a diagnostic.
+  world_error_is_diagnostic: true
+  teacher_success: 0.90
+  teacher_completion: 0.95
+  max_recovery_clip_fraction: 0.01
+  teacher_relative_mpkpe: 0.10
+  teacher_world_mpkpe: 0.15
+  student_success_drop: 0.05
+  student_completion_drop: 0.05
+  student_relative_error_increase_m: 0.02
+  student_world_error_increase_m: 0.05

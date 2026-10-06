@@ -5,6 +5,7 @@ from omegaconf import OmegaConf
 
 from active_adaptation.envs.mdp.commands.motion_tracking.core import MotionTrackingCommand
 from active_adaptation.utils.math import quat_apply_inverse, quat_in_frame, quat_to_rot6d
+from active_adaptation.utils.helpers import TensorRingBuffer
 from active_adaptation.utils.xwbc_data import BODIES, ROOT
 
 
@@ -82,7 +83,7 @@ def environment_config(robot, bank, num_envs, evaluation=False):
 
 
 class XWBCPool:
-    def __init__(self, robot, bank, num_envs, history=8, evaluation=False):
+    def __init__(self, robot, bank, num_envs, history=8, evaluation=False, history_steps=None, action_history=8):
         from active_adaptation.envs import SimpleEnv
         self.robot_name, self.bank, self.evaluation = robot, bank, evaluation
         self.cfg = environment_config(robot, bank, num_envs, evaluation)
@@ -99,7 +100,23 @@ class XWBCPool:
         self.device = self.env.device
         self.num_envs, self.action_dim = num_envs, self.env.action_dim
         self.joint_ids = self.env.action_manager.joint_ids
-        self.history = torch.zeros(num_envs, history, 3*self.action_dim+6, device=self.device)
+        self.history_steps = None if history_steps is None else list(history_steps)
+        self.action_history = int(action_history)
+        if self.history_steps is None:
+            # Keep v0.1 run01's interleaved, oldest-first history exactly intact.
+            self.history = torch.zeros(num_envs, history, 3*self.action_dim+6, device=self.device)
+            self.proprio_dim = history * (3*self.action_dim+6)
+        else:
+            if (not self.history_steps or self.history_steps[0] != 0
+                    or len(set(self.history_steps)) != len(self.history_steps)
+                    or any(not isinstance(x, int) or isinstance(x, bool) or x < 0 for x in self.history_steps)):
+                raise ValueError('History steps must be unique nonnegative integers starting with 0')
+            if not 1 <= self.action_history <= self.env.action_manager._action_applied_buf.capacity:
+                raise ValueError('Action history exceeds the HEFT action buffer capacity')
+            self._state_history = TensorRingBuffer(num_envs, max(self.history_steps)+1,
+                2*self.action_dim+6, device=self.device, dtype=torch.float32)
+            self._history_indices = torch.tensor(self.history_steps, device=self.device)
+            self.proprio_dim = len(self.history_steps)*(2*self.action_dim+6)+self.action_history*self.action_dim
         self.source = torch.zeros(num_envs, dtype=torch.long, device=self.device)
         self.fixed_source = None
         self.all_ids = torch.arange(num_envs, device=self.device)
@@ -125,8 +142,15 @@ class XWBCPool:
         command._motion_student[ids] = student
         self.source[ids] = (torch.randint(3, (len(ids),), device=self.device)
                             if self.fixed_source is None else self.fixed_source)
-        self.history[ids] = 0.
-        self.history[ids, -1] = self.proprio()[ids]
+        self._reset_history(ids)
+
+    def _reset_history(self, ids):
+        if self.history_steps is None:
+            self.history[ids] = 0.
+            self.history[ids, -1] = self.proprio()[ids]
+        else:
+            self._state_history.reset(ids)
+            self._state_history.buffer[ids, self._state_history.head] = self.proprio()[ids, :-self.action_dim]
 
     def proprio(self):
         d = self.robot.data
@@ -147,16 +171,26 @@ class XWBCPool:
                           root_diff, rot), -1).clamp(-20, 20)
 
     def observe(self):
-        return dict(proprio=self.history.flatten(1).clone(), privileged=self.privileged(),
+        return dict(proprio=self.history_observation(), privileged=self.privileged(),
                     motion=self.command.dataset._motion_ids_A.clone(), frame=self.command.t.long().clone(),
                     source=self.source.clone())
+
+    def history_observation(self):
+        if self.history_steps is None:
+            return self.history.flatten(1).clone()
+        states = self._state_history.take(self._history_indices).flatten(1)
+        actions = self.env.action_manager.get_recent_action_obs(self.action_history).flatten(1)
+        return torch.cat((states, actions), -1)
 
     @torch.no_grad()
     def step(self, action, mean):
         td = TensorDict(dict(action=action, loc=mean), [self.num_envs], device=self.device)
         result = self.env.step(td)['next']
-        self.history = self.history.roll(-1, 1)
-        self.history[:, -1] = self.proprio()
+        if self.history_steps is None:
+            self.history = self.history.roll(-1, 1)
+            self.history[:, -1] = self.proprio()
+        else:
+            self._state_history.push(self.proprio()[:, :-self.action_dim])
         return result, self.observe()
 
     @torch.no_grad()

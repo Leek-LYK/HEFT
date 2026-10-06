@@ -1,0 +1,18 @@
+# First D experiment: verified C actor -> critic warmup -> conservative PPO.
+_base_: source_adaptation.yaml
+num_envs: 1024
+rollout_steps: 32
+updates: 600  # 100 critic-only warmup + 500 PPO iterations
+critic_warmup_updates: 100
+learning_rate: 0.00002  # actor
+critic_learning_rate: 0.0001
+checkpoint_interval: 50
+epochs: 3
+minibatch_size: 8192
+clip: 0.1
+value_weight: 0.5
+anchor_weight: 0.1  # dimension-normalized MSE to frozen C action means
+target_kl: 0.02  # analytic KL; backtrack each proposed actor step, stop at exhausted radius
+max_backtracks: 10
+max_grad_norm: 1.0
+action_std: 0.1  # fixed during this first experiment; C's untrained log_std=0 is replaced

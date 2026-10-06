@@ -1,0 +1,11 @@
+# v0.1 run02: wider common context and encoders, trained from scratch.
+_base_: train.yaml
+updates: 10000
+command_offsets: [0, 1, 2, 4, 8, 12, 16, 20, -1, -2, -4, -8]
+history_steps: [0, 1, 2, 3, 4, 8, 12, 16, 20]
+action_history: 8
+token_dim: 256
+encoder_hidden: [512]
+# Normalized-token MSE averages over dimensions. Doubling its weight preserves
+# the previous coefficient on pairwise cosine distance when 128 becomes 256.
+alignment_weight: 2.0

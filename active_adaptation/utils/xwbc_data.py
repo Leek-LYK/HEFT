@@ -231,7 +231,7 @@ def build_dataset(manifest, output, workers=4, limit_per_split=None, shard_size=
 
 class CommandBank:
     """Same motion ordering as HEFT shard groups; banks stay in fp16 on device."""
-    def __init__(self, root, split, device):
+    def __init__(self, root, split, device, offsets=None, sources=None):
         import torch
         self.root = Path(root).resolve()
         self.schema = json.loads((self.root / 'dataset.json').read_text())
@@ -250,9 +250,17 @@ class CommandBank:
         self.starts = torch.tensor(starts, device=device)
         self.ends = torch.tensor(ends, device=device)
         self.lengths = self.ends - self.starts
-        self.offsets = torch.tensor(self.schema['offsets'], device=device)
+        offsets = list(self.schema['offsets'] if offsets is None else offsets)
+        if not offsets or 0 not in offsets or len(set(offsets)) != len(offsets):
+            raise ValueError('Command offsets must be unique and include the current frame')
+        if any(not isinstance(x, int) or isinstance(x, bool) for x in offsets):
+            raise ValueError('Command offsets must be integer frame indices')
+        self.offsets = torch.tensor(offsets, device=device)
+        self.sources = tuple(SOURCES if sources is None else sources)
+        if not self.sources or any(s not in SOURCES for s in self.sources):
+            raise ValueError('Unknown command source selection')
         self.banks = {}
-        for source in SOURCES:
+        for source in self.sources:
             parts = [torch.from_numpy(np.load(self.root / sh['path'] / f'{source}_command.npy')) for sh in self.shards]
             self.banks[source] = torch.cat(parts).to(device)
         self.dims = {s: a.shape[-1] * len(self.offsets) + len(self.offsets) for s, a in self.banks.items()}

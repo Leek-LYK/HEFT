@@ -1,0 +1,6 @@
+_base_: source_adaptation.yaml
+transformer:
+  d_model: 256
+  nhead: 4
+  layers: 2
+  ff_dim: 512

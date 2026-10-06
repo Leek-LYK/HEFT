@@ -8,6 +8,20 @@
 This repository contains training, evaluation, export, and deployment-facing assets for
 humanoid whole-body motion tracking.
 
+## Staged XWBC research (v0.2)
+
+Native privileged teachers, a Human-only shared DAgger student, then frozen-anchor
+robot command encoders. Use `scripts/run_xwbc_staged.sh`; see
+[the staged experiment guide](docs/xwbc_v0.2分阶段训练.md).
+
+The v0.2 branch also preserves controlled PPO finetuning, six-route teacher
+refinement, the no-C ablation, joint supervised training, and the Transformer
+backbone experiment. See the [no-C results](科研/v0.2/11_去除C阶段完整评估结论.md),
+[joint-training results](科研/v0.2/13_U阶段完整评估与结论.md), and
+[Transformer experiment](科研/v0.2/14_Transformer主干对照实验.md).
+Research figures and selected analysis attachments are tracked under
+`科研/v0.2/analysis/`; datasets, checkpoints and full run logs remain external.
+
 ## Cross-embodiment research (XWBC)
 
 The research workflow trains a shared controller for Human/G1/Roban motion

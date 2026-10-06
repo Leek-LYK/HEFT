@@ -28,6 +28,27 @@ def write_json(path, data):
     Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
 
+def load_train_config(path):
+    path = Path(path).resolve()
+    cfg = OmegaConf.load(path)
+    base = cfg.pop('_base_', None)
+    if base is not None:
+        cfg = OmegaConf.merge(OmegaConf.load(path.parent / base), cfg)
+    return OmegaConf.to_container(cfg, resolve=True)
+
+
+def command_bank(root, split, device, cfg):
+    if cfg.get('command_offsets') is None:
+        return CommandBank(root, split, device)
+    return CommandBank(root, split, device, offsets=cfg['command_offsets'])
+
+
+def history_options(cfg):
+    if cfg.get('history_steps') is None:
+        return {}
+    return dict(history_steps=cfg['history_steps'], action_history=cfg.get('action_history', 8))
+
+
 def runtime_setup():
     torch.set_num_threads(4)
     torch.set_float32_matmul_precision('high')
@@ -74,8 +95,13 @@ def collect(pool, bank, policy, steps):
         complete = pool.command.t >= pool.command.lengths-1
         terminal = transition['terminated'].squeeze(-1) | complete
         reward = transition['reward'].sum(-1)
-        values = dict(**obs, action=action, logp=dist.log_prob(action).sum(-1), value=value,
-                      next_value=next_value, reward=reward, done=done, terminal=terminal)
+        values = dict(**obs, action=action, old_mean=dist.mean, logp=dist.log_prob(action).sum(-1), value=value,
+                      next_value=next_value, reward=reward, done=done, terminal=terminal, completed=complete,
+                      terminated=transition['terminated'].squeeze(-1),
+                      truncated=transition['truncated'].squeeze(-1),
+                      recovered=pool.env._nonfinite_state_mask.clone())
+        for i, group in enumerate(pool.env.reward_groups):
+            values[f'reward_{group}'] = transition['reward'][:, i]
         for name, tensor in values.items():
             if tensor.is_floating_point() and not torch.isfinite(tensor).all():
                 raise FloatingPointError(f'{pool.robot_name}: nonfinite rollout {name}')
@@ -123,7 +149,7 @@ def update_policy(policy, optimizer, bank, batches, cfg):
 
 def train(args):
     runtime_setup()
-    cfg = OmegaConf.to_container(OmegaConf.load(args.config), resolve=True)
+    cfg = load_train_config(args.config)
     for name in ('dataset', 'num_envs', 'updates', 'seed', 'variant', 'rollout_steps'):
         value = getattr(args, name, None)
         if value is not None:
@@ -134,7 +160,7 @@ def train(args):
     cfg['dataset'] = str(Path(cfg['dataset']).resolve())
     write_json(output/'config.json', cfg)
     seed_all(cfg['seed'])
-    bank = CommandBank(cfg['dataset'], 'train', 'cuda:0')
+    bank = command_bank(cfg['dataset'], 'train', 'cuda:0', cfg)
     digest = sha256(Path(cfg['dataset'])/'dataset.json')
     write_json(output/'provenance.json', dict(git_head=subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip(),
         dirty_status=subprocess.check_output(['git','status','--short'], cwd=ROOT, text=True),
@@ -145,20 +171,28 @@ def train(args):
     source_files = ['active_adaptation/utils/xwbc_data.py', 'active_adaptation/envs/xwbc.py',
                     'active_adaptation/learning/modules/xwbc.py', 'active_adaptation/learning/xwbc.py',
                     'scripts/xwbc.py', 'scripts/run_xwbc.sh', 'scripts/data_process/build_xwbc_dataset.py',
-                    'scripts/data_process/select_xwbc_motions.py', 'cfg/xwbc/train.yaml']
+                    'scripts/data_process/select_xwbc_motions.py', 'cfg/xwbc/train.yaml',
+                    'cfg/xwbc/heft_context.yaml', 'active_adaptation/utils/helpers.py']
     for filename in source_files:
         destination = output/'code'/filename
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT/filename, destination)
     write_json(output/'source_hashes.json', {p:sha256(ROOT/p) for p in source_files})
+    shutil.copyfile(Path(args.config).resolve(), output/'selected_config.yaml')
+    write_json(output/'observation_contract.json', dict(command_offsets=bank.offsets.tolist(),
+        command_dims=bank.dims, history_steps=cfg.get('history_steps'),
+        legacy_history=cfg.get('history', 8) if cfg.get('history_steps') is None else None,
+        action_history=cfg.get('action_history', cfg.get('history', 8)), token_dim=cfg['token_dim'],
+        encoder_hidden=cfg.get('encoder_hidden', [256]), fps=bank.schema['fps']))
     pools = {}
     writer = None
     try:
         for robot in ROBOTS:
-            pools[robot] = XWBCPool(robot, bank, cfg['num_envs'], cfg['history'])
+            pools[robot] = XWBCPool(robot, bank, cfg['num_envs'], cfg['history'], **history_options(cfg))
             write_json(output/f'{robot}_environment.json', pools[robot].resolved_config)
-        policy = XWBCPolicy(bank.dims, {r:p.history.flatten(1).shape[-1] for r,p in pools.items()},
-                            {r:p.action_dim for r,p in pools.items()}, cfg['token_dim'], cfg['hidden'], cfg['variant']).to(bank.device)
+        policy = XWBCPolicy(bank.dims, {r:p.proprio_dim for r,p in pools.items()},
+                            {r:p.action_dim for r,p in pools.items()}, cfg['token_dim'], cfg['hidden'], cfg['variant'],
+                            encoder_hidden=cfg.get('encoder_hidden')).to(bank.device)
         optimizer = torch.optim.Adam(policy.parameters(), lr=cfg['learning_rate'])
         start_update = 0
         if args.resume:
@@ -166,8 +200,9 @@ def train(args):
             if state['dataset_digest'] != digest or restored.constructor != policy.constructor:
                 raise ValueError('Resume requires identical dataset and architecture')
             for key in ('num_envs','rollout_steps','learning_rate','epochs','minibatch_size',
-                        'clip','entropy_weight','value_weight','alignment_weight','max_grad_norm'):
-                if cfg[key] != state['config'][key]:
+                        'clip','entropy_weight','value_weight','alignment_weight','max_grad_norm',
+                        'command_offsets','history_steps','action_history','encoder_hidden'):
+                if cfg.get(key) != state['config'].get(key):
                     raise ValueError(f'Resume setting changed: {key}; use a separate experiment')
             policy.load_state_dict(restored.state_dict()); del restored
             optimizer.load_state_dict(state['optimizer']); start_update = state['update']
@@ -199,8 +234,15 @@ def train(args):
                     metrics[f'{r}/mean_reward'] = rewards[r]
                     metrics[f'{r}/recoveries'] = pool.env.nonfinite_state_recovery_count
                     metrics[f'{r}/done_fraction'] = batches[r]['done'].float().mean().item()
+                    for field in ('terminated','truncated','recovered'):
+                        metrics[f'{r}/{field}_fraction'] = batches[r][field].float().mean().item()
+                    for group in pool.env.reward_groups:
+                        metrics[f'{r}/reward_{group}'] = batches[r][f'reward_{group}'].mean().item()
                     for s, count in zip(SOURCES, torch.bincount(batches[r]['source'], minlength=3).tolist()):
                         metrics[f'{r}/source_{s}_count'] = count
+                        source_mask = batches[r]['source'] == SOURCES.index(s)
+                        if count:
+                            metrics[f'{r}/source_{s}_mean_reward'] = batches[r]['reward'][source_mask].mean().item()
                 log.write(json.dumps(metrics)+'\n')
                 for k,v in metrics.items():
                     writer.add_scalar(k, v, last_update)
@@ -261,12 +303,13 @@ def evaluate(args):
     dataset=args.dataset or state['config']['dataset']
     if sha256(Path(dataset)/'dataset.json') != state['dataset_digest']:
         raise ValueError('Evaluation dataset must match training dataset manifest')
-    bank=CommandBank(dataset,args.split,'cuda:0')
+    bank=command_bank(dataset,args.split,'cuda:0',state['config'])
     count=min(len(bank.rows),args.max_motions or len(bank.rows))
     results=[]
     for robot in ROBOTS:
         seed_all(args.seed)
-        pool=XWBCPool(robot,bank,min(args.num_envs,count),state['config']['history'],evaluation=True)
+        pool=XWBCPool(robot,bank,min(args.num_envs,count),state['config']['history'],evaluation=True,
+                      **history_options(state['config']))
         write_json(output/f'{robot}_environment.json',pool.resolved_config)
         try:
             for source_id,source in enumerate(SOURCES):
