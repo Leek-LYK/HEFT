@@ -209,7 +209,10 @@ l7_sim2real/install/
 l7_sim2real/log/
 
 # Local experiment logs, checkpoints and validation artifacts
-/logs/
+/logs
+
+# Machine-local worktree navigation and resource aliases
+/.local/
 
 # Local references outside the reviewed XWBC baseline (see docs/xwbc_v0.1基线.md)
 /paper/X-WBC.pdf

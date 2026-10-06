@@ -10,11 +10,12 @@ export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 unset LD_LIBRARY_PATH
 export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1
 MODE="${1:-train}"
+CONFIG="${CONFIG:-$PROJECT_ROOT/cfg/xwbc/heft_context.yaml}"
 DATASET="${DATASET:-$PROJECT_ROOT/dataset/xwbc/paired_10k_v1}"
 MANIFEST="${MANIFEST:-$PROJECT_ROOT/dataset/xwbc/manifests/paired_10k.jsonl}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_ROOT/logs/v0.1/xwbc_$(date -u +%Y%m%dT%H%M%SZ)}"
-NUM_ENVS="${NUM_ENVS:-8192}"
-UPDATES="${UPDATES:-2500}"
+NUM_ENVS="${NUM_ENVS:-}"
+UPDATES="${UPDATES:-}"
 VARIANT="${VARIANT:-shared}"
 SEED="${SEED:-0}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -38,7 +39,9 @@ prepare() {
 
 train_one() {
     local variant="$1" seed="$2" destination="$3"
-    local args=(train --dataset "$DATASET" --output "$destination" --variant "$variant" --seed "$seed" --num-envs "$NUM_ENVS" --updates "$UPDATES")
+    local args=(train --config "$CONFIG" --dataset "$DATASET" --output "$destination" --variant "$variant" --seed "$seed")
+    if [[ -n "$NUM_ENVS" ]]; then args+=(--num-envs "$NUM_ENVS"); fi
+    if [[ -n "$UPDATES" ]]; then args+=(--updates "$UPDATES"); fi
     if [[ -n "${RESUME:-}" ]]; then args+=(--resume "$RESUME"); fi
     if [[ -n "${MAX_MINUTES:-}" ]]; then args+=(--max-minutes "$MAX_MINUTES"); fi
     if [[ "$DRY_RUN" == 1 ]]; then

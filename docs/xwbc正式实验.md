@@ -6,15 +6,15 @@
 
 v0.1 的共享模型 seed 0 已在 `logs/v0.1/shared_seed0_run01` 完成 2,500 次更新。
 对应源码、数据和权重摘要及 CPU 验证方法见 [v0.1 可复现基线](xwbc_v0.1基线.md)。
-该运行尚无正式六组合评估；后续 GPU 评估、训练与对照预算待确认。下文执行示例用于获批预算后的复现，本次基线固化只执行 CPU 检查和 `DRY_RUN`。
+第一轮完整六组合评估仍待开展。当前用户已安排 v0.1 第二轮训练，采用下文的宽窗口配置；第一轮基线通过 `CONFIG=cfg/xwbc/train.yaml` 复现，历史证据保留。
 
 ## 运行环境与默认预算
 
 在仓库根目录使用 `.venv`，单进程占用一张 B200。两个机型环境池位于同一设备，分别采集数据，共同优化共享参数。
 
-默认每机型 8,192 个环境、每次采集 32 步、2,500 次更新，合计 1,310,720,000 transitions；每个机型获得相同份额。此规模已完成 B200 有限预算运行验证。预算、环境数和输出目录通过环境变量覆盖；训练曲线和验证评估用于后续预算调整。
+第二轮默认每机型 8,192 个环境、每次采集 32 步、10,000 次更新，合计 5,242,880,000 transitions；每个机型获得相同份额。此规模已完成 B200 有限预算运行验证。预算、环境数和输出目录通过环境变量覆盖；训练曲线和验证评估用于后续预算调整。
 
-主要配置：`cfg/xwbc/train.yaml`。默认方法为 `shared`，种子为 `0`。三种方法的网络输入、奖励和每机型采样预算保持一致。
+主要配置：`cfg/xwbc/heft_context.yaml`，通过 `_base_` 继承并覆盖第一轮的 `cfg/xwbc/train.yaml`。统一参考预览最远 400 ms、本体历史最远 400 ms、8 个历史动作，Encoder 输出 256 维；`history_steps` 优先于兼容旧模型的 `history` 字段。详见 [第二轮方案](../科研/v0.1/04_第二轮训练方案与记录.md)。默认方法为 `shared`，种子为 `0`。三种方法的网络输入、奖励和每机型采样预算保持一致。
 
 ## 正式入口
 
@@ -25,11 +25,11 @@ DRY_RUN=1 bash scripts/run_xwbc.sh train
 DRY_RUN=1 bash scripts/run_xwbc.sh suite
 ```
 
-启动一份共享模型：
+启动第二轮共享模型：
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 \
-OUTPUT_ROOT="$PWD/logs/v0.1/shared_seed0" \
+OUTPUT_ROOT="$PWD/logs/v0.1/shared_seed0_run02" \
 bash scripts/run_xwbc.sh train
 ```
 
@@ -47,7 +47,7 @@ bash scripts/run_xwbc.sh suite
 
 ```bash
 VARIANTS="shared no_align" SEEDS="0" \
-NUM_ENVS=2048 UPDATES=10000 \
+NUM_ENVS=2048 UPDATES=40000 \
 OUTPUT_ROOT="$PWD/logs/v0.1/selected_comparison" \
 bash scripts/run_xwbc.sh suite
 ```
@@ -96,8 +96,8 @@ bash scripts/run_xwbc.sh train
 ## 单独评估
 
 ```bash
-CHECKPOINT="$PWD/logs/v0.1/shared_seed0/checkpoint_final.pt" \
-OUTPUT_ROOT="$PWD/logs/v0.1/shared_seed0_eval" \
+CHECKPOINT="$PWD/logs/v0.1/shared_seed0_run02/checkpoint_final.pt" \
+OUTPUT_ROOT="$PWD/logs/v0.1/shared_seed0_run02_eval" \
 SPLIT=test EVAL_ENVS=64 \
 bash scripts/run_xwbc.sh evaluate
 ```
@@ -124,13 +124,14 @@ bash scripts/run_xwbc.sh evaluate
 ## checkpoint 与继续训练
 
 ```bash
-RESUME="$PWD/logs/v0.1/shared_seed0/checkpoint_1000.pt" \
+CONFIG="$PWD/cfg/xwbc/train.yaml" \
+RESUME="$PWD/logs/v0.1/shared_seed0_run01/checkpoint_1000.pt" \
 UPDATES=2500 \
 OUTPUT_ROOT="$PWD/logs/v0.1/shared_seed0_continue" \
 bash scripts/run_xwbc.sh train
 ```
 
-`UPDATES` 是累计目标更新次数。继续训练加载网络、优化器和随机数状态，使用相同数据版本、网络与训练配置，并从新仿真回合继续；checkpoint 不保存仿真器的完整内部状态。各次运行的起点、实际预算和继续语义写入记录。
+`UPDATES` 是累计目标更新次数。继续训练时 `CONFIG` 选择与 checkpoint 相同的配置；第一轮使用 `CONFIG="$PWD/cfg/xwbc/train.yaml"`，第二轮使用 `CONFIG="$PWD/cfg/xwbc/heft_context.yaml"`。继续训练加载网络、优化器和随机数状态，使用相同数据版本、网络与训练配置，并从新仿真回合继续；checkpoint 不保存仿真器的完整内部状态。各次运行的起点、实际预算和继续语义写入记录。
 
 新 checkpoint 使用 `xwbc-v1` 格式，包含全部来源编码器、机型适配模块与共享策略。旧 HEFT 三阶段 checkpoint 属于另一套模型接口。
 
