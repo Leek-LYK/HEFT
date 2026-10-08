@@ -1,0 +1,135 @@
+{
+  "snapshot_at": "2026-10-07T21:57:09+08:00",
+  "old_to_new": {
+    "01_分阶段方案与实现记录.md": "01_基础路线_A到B到C.md",
+    "02_阶段A正式运行记录.md": "01_基础路线_A到B到C.md",
+    "03_阶段B正式运行记录.md": "01_基础路线_A到B到C.md",
+    "04_阶段B学生独立执行与监督机制.md": "01_基础路线_A到B到C.md",
+    "05_阶段C正式运行记录.md": "01_基础路线_A到B到C.md",
+    "06_阶段D实现与正式训练记录.md": "02_PPO微调_D阶段负结果.md",
+    "07_阶段D评估与后续实验方向.md": "02_PPO微调_D阶段负结果.md",
+    "08_教师纠偏训练探索.md": "03_教师纠偏_C到E.md",
+    "09_教师纠偏完整验证与测试结论.md": "03_教师纠偏_C到E.md",
+    "10_去除C阶段消融实验.md": "04_去除C_A到B到E.md",
+    "11_去除C阶段完整评估结论.md": "04_去除C_A到B到E.md",
+    "12_U阶段联合训练实验.md": "05_联合训练_U与来源课程.md",
+    "13_U阶段完整评估与结论.md": "05_联合训练_U与来源课程.md",
+    "14_Transformer主干对照实验.md": "06_Transformer主干_完整实验与失败分析.md",
+    "15_Transformer与MLP同期训练对比.md": "06_Transformer主干_完整实验与失败分析.md",
+    "16_Transformer完整验证与B阶段失败分析.md": "06_Transformer主干_完整实验与失败分析.md",
+    "17_学生命令编码器FSQ对照实验.md": "07_FSQ命令表征_当前主基线.md",
+    "18_FlowMatching与容量匹配MLP动作头实验.md": "08_FlowMatching与MLP动作解码.md"
+  },
+  "old_sha256": {
+    "01_分阶段方案与实现记录.md": "74d468dfae6cc26ec8bd87afc313be8797db4b78acdde0cdf7fd4d5a46f11b90",
+    "02_阶段A正式运行记录.md": "ecaab07f1607759463dd36d20d52fd6d4143834abdb6705f8cc46ba4f6cce63d",
+    "03_阶段B正式运行记录.md": "0ef1d69a37f867cadbe242e90cd5e59c906535c274d48711412bf193562b4389",
+    "04_阶段B学生独立执行与监督机制.md": "036c9db683d60dde1e20d3e592a086cf879bb05800c57bc0890c29c57781c12a",
+    "05_阶段C正式运行记录.md": "8305f8e65a00884254cbf8598527842f943f0cf3d847edb513a407c3b15a0063",
+    "06_阶段D实现与正式训练记录.md": "b904c6cbe7809f87edb83ba53017c4087e34719b73ed3e91c396f54ce69421b9",
+    "07_阶段D评估与后续实验方向.md": "6ad0742195320fa88d3bbe2537dddf9077fbc966eb2409b49950b74cea9732eb",
+    "08_教师纠偏训练探索.md": "ae89494ca9754bb321513ab1d952deb064aa66a3b17269d1e11ae3574d7ddcf8",
+    "09_教师纠偏完整验证与测试结论.md": "ef69e41167dea4f9991dbce27adc4eddb22a2247d34b6d583e4b2d5b107460db",
+    "10_去除C阶段消融实验.md": "17ec423ec809d5617dfea5f6946966c450b37b6087db83cfa7078e43fa4806fd",
+    "11_去除C阶段完整评估结论.md": "7b0287c6e82c679fc2ef9053cb106395a8517d7a37afa013435d10b159e1f8f7",
+    "12_U阶段联合训练实验.md": "171ac309560081bb5ce21b0f01432bd6190d961010aa77d37f08d4db5a089cc5",
+    "13_U阶段完整评估与结论.md": "298efb4ba0afcbee7121028316a95321810d55b84e112557adf6c8201d179352",
+    "14_Transformer主干对照实验.md": "b3b363ca35ef794714c97c484504398d1f8e4d656348832840d26efe80ea75a7",
+    "15_Transformer与MLP同期训练对比.md": "6a91b54d63bc0e7d4cc6a9d0a39900bcea5e21d67bb112760662db85dd3d42b4",
+    "16_Transformer完整验证与B阶段失败分析.md": "4fe2a1da2633222ccb390ad826b81b7da61133d1020377e0dc48c1736d43811f",
+    "17_学生命令编码器FSQ对照实验.md": "58ac44dc8191b00fb76283aedf5c98f942a6ed4a0fcb2552541b7917c237a8aa",
+    "18_FlowMatching与容量匹配MLP动作头实验.md": "8e9a79ebd954c93c4d5204c18e99a457e207e81cfa12d30f72f49bd15c6ee8ce"
+  },
+  "live_experiment_status": {
+    "flow": {
+      "update": 1650,
+      "transitions": 54067200,
+      "complete": false,
+      "E_result": false,
+      "val_summary": false,
+      "test_summary": false
+    },
+    "decoder_mlp": {
+      "update": 2147,
+      "transitions": 70352896,
+      "complete": false,
+      "E_result": false,
+      "val_summary": false,
+      "test_summary": false
+    }
+  },
+  "score_sources": {
+    "Cval": {
+      "path": "logs/v0.2/staged_run01/source_encoders/eval_val/summary.json",
+      "sha256": "3777a8a0f6d8010f75e87587a349c7f48eab8e509b67121df61999af989517c1"
+    },
+    "Dval": {
+      "path": "logs/v0.2/staged_run01/finetune_ppo/eval_val/summary.json",
+      "sha256": "370f2edb008a0d31aa2b809ddfadbba4a5399bf895e7c8e14fa70f5acfa14752"
+    },
+    "CEval": {
+      "path": "logs/v0.2/refinement_20261005/all_sources_run01/eval_val_300/summary.json",
+      "sha256": "a211d37b04a135812b1e50e179d9ef4c75c9fb03684b420670c309a333de4b85"
+    },
+    "CEtest": {
+      "path": "logs/v0.2/refinement_20261005/all_sources_run01/eval_test_candidate/summary.json",
+      "sha256": "30f1664ed324d94d708ceb916896f76d2f194669121aaa3daae72ec205e90a35"
+    },
+    "BEval": {
+      "path": "logs/v0.2/no_c_ablation_20261005/direct_e_run01/eval_val_2300/summary.json",
+      "sha256": "3905051f672e779c110abf0834faf8c4d3e0ec92d320e34ae8c4176cac642876"
+    },
+    "BEtest": {
+      "path": "logs/v0.2/no_c_ablation_20261005/direct_e_run01/eval_test_2300/summary.json",
+      "sha256": "dc299da31f1ac3328d699381ff204b5d227c4ac09e4b5751d6ff23a95d21ecbd"
+    },
+    "FSQval": {
+      "path": "logs/v0.2/fsq_20261007/run01/E_FSQ/eval_val_2300/summary.json",
+      "sha256": "edcfa7d9655fb8551395a67551811c807f018bd2d20b0fa01482240fb57ce217"
+    },
+    "FSQtest": {
+      "path": "logs/v0.2/fsq_20261007/run01/E_FSQ/eval_test_2300/summary.json",
+      "sha256": "15b963c57d876e44adcbd2ace9676eb3103c63238635e83cb17db82db84babcc"
+    },
+    "fsq_20261007/run01/student_human/eval_val/summary.json": {
+      "path": "logs/v0.2/fsq_20261007/run01/student_human/eval_val/summary.json",
+      "sha256": "1f83e74b2995c6f6a28241220dbaa221a2a2d5ac28f6cc7290eeb615387cdf0e"
+    },
+    "action_decoder_20261007/formal/decoder_mlp/student_human/eval_val/summary.json": {
+      "path": "logs/v0.2/action_decoder_20261007/formal/decoder_mlp/student_human/eval_val/summary.json",
+      "sha256": "013f8e51bd4b798fa2266c031e8f5d83792b78376ae796c8df82305af90ef159"
+    },
+    "action_decoder_20261007/formal/flow/student_human/eval_val/summary.json": {
+      "path": "logs/v0.2/action_decoder_20261007/formal/flow/student_human/eval_val/summary.json",
+      "sha256": "83f9cc0bd2212a59358c6ff81b114010bbe1a8dcdb1d1eca65fe1f06495a80ea"
+    }
+  },
+  "old_text_retained": false,
+  "canonical_documents": [
+    "00_研究总览.md",
+    "01_基础路线_A到B到C.md",
+    "02_PPO微调_D阶段负结果.md",
+    "03_教师纠偏_C到E.md",
+    "04_去除C_A到B到E.md",
+    "05_联合训练_U与来源课程.md",
+    "06_Transformer主干_完整实验与失败分析.md",
+    "07_FSQ命令表征_当前主基线.md",
+    "08_FlowMatching与MLP动作解码.md"
+  ],
+  "new_sha256": {
+    "04_去除C_A到B到E.md": "542e56395462e7ea4979825265ab2c75243c4eff589094b2ec65fdb8b2fa2252",
+    "01_基础路线_A到B到C.md": "72d4c016540fc4f4ecf9b45b433a045c326085c89f63f95ebe2815b5c18205da",
+    "00_研究总览.md": "1304880dc240b0464a744a438ac6265bed3744fac021ba08ba022198d8adf643",
+    "05_联合训练_U与来源课程.md": "9f3869892ebe9c097dabb666154ae63fdbc7e04a61099d8ebd7e6ef50526cc09",
+    "08_FlowMatching与MLP动作解码.md": "640b4d2de0bb305fe11e970eb374e283e25607531eb8a3a84eae36044867beb1",
+    "06_Transformer主干_完整实验与失败分析.md": "baa2b0ae57566541506af10a0dea1867dede34619c882f16fca33ff8846e4bbd",
+    "03_教师纠偏_C到E.md": "37e743c5fa46144a3d513945bf321552516c22db408c172ea7783985fd266c43",
+    "02_PPO微调_D阶段负结果.md": "21f3e52ab935e812d99403c6650a5e16dd27bf1d35b8d44ac66b4b2e058f934e",
+    "07_FSQ命令表征_当前主基线.md": "ce67c094cfd5adbe50f849710387f762ac44eaeabb26227b8383348749580940"
+  },
+  "updated_entrypoints": [
+    "README.md",
+    "docs/xwbc_v0.2分阶段训练.md",
+    "docs/xwbc各类实验_训练阶段与网络图解.md"
+  ]
+}

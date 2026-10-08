@@ -34,10 +34,16 @@ class NativeTeacher(nn.Module):
         return self.critic(torch.cat((proprio,privileged,native_command),-1)).squeeze(-1)
 
 
-def student_mean(model,robot,proprio,command,source):
-    """Only the selected encoder is evaluated. Frozen executors retain input gradients."""
+def student_features(model,robot,proprio,command,source):
     token=model.encoders['shared'][source](command)
-    hidden=model.backbones['shared'](torch.cat((token,model.proprio[robot](proprio)),-1))
+    return model.backbones['shared'](torch.cat((token,model.proprio[robot](proprio)),-1))
+
+
+def student_mean(model,robot,proprio,command,source):
+    """Deterministic executed action; a flow endpoint is not a distribution mean."""
+    hidden=student_features(model,robot,proprio,command,source)
+    if hasattr(model.heads,'predict'):
+        return model.heads.predict(robot,hidden)
     return model.heads[robot](hidden)
 
 
@@ -46,6 +52,7 @@ def configure_student(model,stage):
     if stage=='B':
         modules=[model.encoders['shared']['human'],model.backbones['shared'],model.proprio,model.heads]
     elif stage=='C':
+        if hasattr(model.heads,'predict'):raise ValueError('Experimental action decoders support B/E only')
         modules=[model.encoders['shared']['g1'],model.encoders['shared']['roban']]
     else:raise ValueError(stage)
     for module in modules:module.requires_grad_(True);module.train()

@@ -1,0 +1,13 @@
+_base_: staged.yaml
+student_fsq:
+  enabled: true
+  scale: 4.499549865722656
+action_decoder:
+  kind: mlp
+  width: 288
+  steps: 4
+  action_embed: 64
+  time_embed: 32
+  robot_embed: 16
+  init_seed: 12345
+  noise_seed: 314159

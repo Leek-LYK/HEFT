@@ -1,0 +1,5 @@
+_base_: staged.yaml
+incremental_experiment: teacher15k_flow8
+checkpoint_interval: 1000
+stage_a:
+  updates: 15000

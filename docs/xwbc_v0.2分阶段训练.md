@@ -120,7 +120,7 @@ D checkpoint 保存两组优化器和 RNG，可用相同 `finetune` 入口及 `R
 
 TensorBoard 选择 `finetune_ppo/tensorboard`，先看 `critic_warmup`、`ppo_update`、`value_loss`、`explained_variance`；PPO 开始后看 `max_post_step_kl`、`actor_step_scale`、`anchor_action_mse` 和逐来源训练回合统计。`train_episode_success_rate` 使用随机训练起点，与完整片段验证的范围不同。
 
-实现与正式启动记录见 [阶段 D 记录](../科研/v0.2/06_阶段D实现与正式训练记录.md)。
+实现与正式启动记录见 [阶段 D 记录](../科研/v0.2/02_PPO微调_D阶段负结果.md)。
 
 ## 运行、恢复与复现
 

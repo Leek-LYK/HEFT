@@ -1,0 +1,36 @@
+{
+  "checked_at": "2026-10-08T20:21:39+08:00",
+  "pipeline_status": {
+    "status": "complete",
+    "workers": {
+      "origin_test": 0,
+      "origin_val": 0,
+      "A10000_control": 0,
+      "teacher_g1": 0,
+      "teacher_roban": 0,
+      "A15000_candidate": 0
+    },
+    "test_used_for_selection": false
+  },
+  "checks": {
+    "selected_checkpoint_hashes": true,
+    "raw_scores_recomputed": true,
+    "environment_json_equal": true,
+    "initial_student_tensors_equal": true,
+    "origin_conversion_model_tensors_equal": true
+  },
+  "origin_repeat": {
+    "previous_val_success": 0.9733333333333333,
+    "current_val_success": 0.9713333333333333,
+    "cause": "not established; weights identical, same environment JSON"
+  },
+  "sources": {
+    "logs/v0.2/incremental_20261008/formal/A15000_vs_A10000_val.json": "2ae4e322f1a18397087255a9cbb3bfe7cb97e185d4f2ea7e58f2c31440ff018a",
+    "logs/v0.2/incremental_20261008/formal/A15000_vs_A10000_test.json": "789c2b4791ddeabeee93161d8c622936fab5ea2c8e2c9d75789f3ddde8f7da17",
+    "logs/v0.2/incremental_20261008/formal/initialization_audit.json": "eb3088acc0296e91c3fa33d9c8f026f06fcb77a45ed43f394758deecb17f300a",
+    "logs/v0.2/incremental_20261008/formal/A10000_control/comparison_to_origin_val.json": "da8e564c4f77078f600b13f1ef044c6f9c05b912e1950ea9638efc758cf1d331",
+    "logs/v0.2/incremental_20261008/formal/A10000_control/comparison_to_origin_test.json": "ebdd26910e1ac21af27d3364a6b9736678bc1f4e25f73189a9aab1c1a0940006",
+    "logs/v0.2/incremental_20261008/formal/A15000_candidate/comparison_to_origin_val.json": "12cee0578ac1e84e47a995781be59a0d0ecdad4da3b3db0a14b4ccac03236d75",
+    "logs/v0.2/incremental_20261008/formal/A15000_candidate/comparison_to_origin_test.json": "0fdb157c00357b2d862280ab97e7d2849e16b96e839d39bd02c8eb6cf57d84a2"
+  }
+}

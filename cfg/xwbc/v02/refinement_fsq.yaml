@@ -1,0 +1,24 @@
+_base_: source_adaptation.yaml
+method: command_fsq_no_c_budget_matched
+parent_stage: B
+updates: 2300
+num_envs: 1024
+rollout_steps: 16
+supervised_steps: 16
+batch_size: 1024
+learning_rate: 0.00001
+checkpoint_interval: 100
+anchor_weight: 0.1
+train_sources: true
+# Scores only; these weights never initialize or supervise training.
+evaluation_reference: logs/v0.2/no_c_ablation_20261005/direct_e_run01/eval_val_2300
+budget_schedule:
+  - until_update: 2000
+    supervised_steps: 32
+    batch_size: 2048
+  - until_update: 2300
+    supervised_steps: 16
+    batch_size: 1024
+student_fsq:
+  enabled: true
+  scale: 4.499549865722656

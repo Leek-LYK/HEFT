@@ -16,7 +16,7 @@ from omegaconf import OmegaConf
 from active_adaptation.envs.xwbc_staged import StagedPool
 from active_adaptation.learning.modules.xwbc import XWBCPolicy,gae,ppo_loss
 from active_adaptation.learning.modules.xwbc_staged import (
-    NativeTeacher,Reservoir,student_mean,configure_student,action_mse,stage_c_loss,frozen_digest)
+    NativeTeacher,Reservoir,student_mean,student_features,configure_student,action_mse,stage_c_loss,frozen_digest)
 from active_adaptation.learning.xwbc import runtime_setup,seed_all,write_json,aggregate,history_options,load_train_config
 from active_adaptation.utils.xwbc_data import CommandBank,ROOT,ROBOTS,SOURCES,sha256
 
@@ -65,11 +65,14 @@ def checkpoint(path,model,optimizer,stage,update,cfg,digest,parents,controls,rep
                numpy_rng=np.random.get_state(),python_rng=random.getstate(),
                replay=None if replay is None else {r:b.state_dict() for r,b in replay.items()},
                restart_semantics='restore learner/optimizer/reservoir/RNG; restart live simulator episodes')
+    if hasattr(getattr(model,'heads',None),'rng_state'):
+        state['decoder_rng']=model.heads.rng_state()
     torch.save(state,str(path)+'.tmp');os.replace(str(path)+'.tmp',path)
 
 
 def load_model(path,device='cuda:0'):
-    state=torch.load(path,map_location='cpu',weights_only=False)
+    from active_adaptation.learning.modules.xwbc_incremental import load_checkpoint_safe
+    state=load_checkpoint_safe(path)
     if state.get('format')!=PROTOCOL:raise ValueError('Expected a v0.2 staged checkpoint')
     model=(NativeTeacher(**state['constructor']) if semantic_stage(state['stage'])=='A' else XWBCPolicy(**state['constructor'])).to(device)
     model.load_state_dict(state['model']);model.eval()
@@ -85,12 +88,31 @@ def initialize_run(output,cfg):
     files=['active_adaptation/learning/xwbc_staged.py','active_adaptation/learning/xwbc_finetune.py','active_adaptation/learning/modules/xwbc_staged.py',
            'active_adaptation/envs/xwbc_staged.py','active_adaptation/envs/xwbc.py',
            'active_adaptation/learning/modules/xwbc.py','active_adaptation/learning/xwbc.py',
+           'active_adaptation/learning/modules/xwbc_incremental.py',
            'active_adaptation/utils/xwbc_data.py','active_adaptation/utils/helpers.py',
            'active_adaptation/learning/ppo/common.py','scripts/xwbc_staged.py',
            'scripts/data_process/build_xwbc_dataset.py',
            'cfg/xwbc/v02/staged.yaml','cfg/xwbc/v02/source_adaptation.yaml','cfg/xwbc/v02/finetune.yaml','scripts/run_xwbc_staged.sh','scripts/data_process/select_xwbc_simple.py']
     if cfg.get('transformer') is not None:
         files += ['active_adaptation/learning/modules/xwbc_transformer.py','scripts/run_xwbc_transformer.py','scripts/audit_xwbc_transformer.py','scripts/refine_xwbc_student.py','cfg/xwbc/v02/staged_transformer.yaml','cfg/xwbc/v02/refinement_transformer.yaml']
+    if cfg.get('student_fsq') is not None:
+        files += ['active_adaptation/learning/modules/student_latent_quantizer.py',
+                  'scripts/run_xwbc_fsq.py', 'scripts/audit_xwbc_fsq.py',
+                  'scripts/refine_xwbc_student.py', 'scripts/compare_xwbc_refinement.py',
+                  'scripts/finish_xwbc_no_c_evaluation.py', 'scripts/run_xwbc_no_c_ablation.py',
+                  'scripts/smoke_xwbc_fsq.py', 'tests/test_xwbc_fsq.py',
+                  'cfg/xwbc/v02/staged_fsq.yaml', 'cfg/xwbc/v02/refinement_fsq.yaml']
+    if cfg.get('action_decoder') is not None:
+        files += ['active_adaptation/learning/modules/xwbc_action_decoder.py',
+                  'scripts/run_xwbc_flow.py','scripts/audit_xwbc_action_decoder.py',
+                  'scripts/smoke_xwbc_action_decoder.py','tests/test_xwbc_action_decoder.py',
+                  'cfg/xwbc/v02/staged_flow.yaml','cfg/xwbc/v02/refinement_flow.yaml',
+                  'cfg/xwbc/v02/staged_decoder_mlp.yaml','cfg/xwbc/v02/refinement_decoder_mlp.yaml']
+    if cfg.get('incremental_experiment'):
+        files += ['active_adaptation/learning/modules/xwbc_incremental.py',
+                  'scripts/run_xwbc_incremental.py','scripts/audit_xwbc_incremental.py','scripts/smoke_xwbc_incremental.py',
+                  'tests/test_xwbc_incremental.py',
+                  'cfg/xwbc/v02/teacher_resume_15k.yaml','cfg/xwbc/v02/refinement_flow_incremental.yaml']
     for f in files:
         dst=out/'code'/f;dst.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/f,dst)
     write_json(out/'source_hashes.json',{f:sha256(ROOT/f) for f in files})
@@ -163,6 +185,10 @@ def verify_gate(path,checkpoint_path,cfg,expected_stage,expected_robot=None):
 
 def validate_parent(state,cfg,stage):
     if state['stage']!=stage_name(stage,cfg):raise ValueError(f'Expected stage {stage}')
+    if stage != 'A' and state['constructor'].get('student_fsq') != cfg.get('student_fsq'):
+        raise ValueError('Parent student FSQ configuration differs')
+    if stage != 'A' and state['constructor'].get('action_decoder') != cfg.get('action_decoder'):
+        raise ValueError('Parent action decoder configuration differs')
     if state['context']!=context_contract(cfg):raise ValueError('Parent time context differs')
     if state['dataset_digest']!=sha256(Path(cfg['dataset'])/'dataset.json'):raise ValueError('Parent dataset differs')
 
@@ -220,10 +246,11 @@ def teacher_update(model,optimizer,bank,batch,cfg):
     return {k:float(np.mean([r[k] for r in metrics])) for k in metrics[0]}
 
 
-def restore_optimizer(args,model,optimizer,cfg,stage,digest,replay=None,parents=None):
+def restore_optimizer(args,model,optimizer,cfg,stage,digest,replay=None,parents=None,controls=None):
     if not args.resume:return 0
     restored,state=load_model(args.resume,device=next(model.parameters()).device)
     if state['stage']!=stage_name(stage,cfg) or state['dataset_digest']!=digest or restored.constructor!=model.constructor:raise ValueError('Resume model/stage/data mismatch')
+    if controls is not None and state['controls']!=controls:raise ValueError('Resume control contract changed')
     if stage=='B' and any(state['parents'][r]['sha256']!=parents[r]['sha256'] for r in ROBOTS):raise ValueError('Resume teachers changed')
     if stage=='C' and state['parents']['sha256']!=parents['sha256']:raise ValueError('Resume Human anchor changed')
     for key in ['num_envs','rollout_steps','command_offsets','history_steps','action_history','learning_rate']:
@@ -233,6 +260,9 @@ def restore_optimizer(args,model,optimizer,cfg,stage,digest,replay=None,parents=
     for key in [*active_keys,'max_grad_norm','seed']:
         if cfg.get(key)!=state['config'].get(key):raise ValueError('Resume learning setting changed: '+key)
     model.load_state_dict(restored.state_dict());optimizer.load_state_dict(state['optimizer']);del restored
+    if hasattr(model.heads if hasattr(model,'heads') else None,'restore_rng'):
+        if 'decoder_rng' not in state:raise ValueError('Missing decoder RNG for exact learner resume')
+        model.heads.restore_rng(state['decoder_rng'])
     torch.set_rng_state(state['torch_rng'].cpu());torch.cuda.set_rng_state_all([x.cpu() for x in state['cuda_rng']])
     random.setstate(state['python_rng']);np.random.set_state(state['numpy_rng'])
     if replay is not None:
@@ -252,7 +282,14 @@ def train_teacher(args):
         optimizer=torch.optim.Adam(model.parameters(),lr=cfg['learning_rate'])
         digest=sha256(Path(cfg['dataset'])/'dataset.json');controls={args.robot:control_contract(pool)}
         write_json(out/'environment.json',pool.resolved_config);write_json(out/'control_contract.json',controls)
-        start=restore_optimizer(args,model,optimizer,cfg,'A',digest);last=start;t0=time.monotonic()
+        start=restore_optimizer(args,model,optimizer,cfg,'A',digest,controls=controls);last=start;t0=time.monotonic()
+        teacher_parents={}
+        if args.resume:
+            teacher_parents=dict(resume_checkpoint=str(Path(args.resume).resolve()),sha256=sha256(args.resume),start_update=start)
+            write_json(out/'resume.json',dict(**teacher_parents,target_update=cfg['updates'],additional_updates=cfg['updates']-start,
+                       optimizer_restored=True,rng_restored=True,simulator_episodes='restarted'))
+            if cfg.get('incremental_experiment'):
+                checkpoint(out/'checkpoint_start.pt',model,optimizer,'A',start,cfg,digest,teacher_parents,controls)
         if start>=cfg['updates']:raise ValueError('Update target must exceed the resumed update')
         with (out/'metrics.jsonl').open('w',buffering=1) as log:
             for i in range(start,cfg['updates']):
@@ -262,12 +299,13 @@ def train_teacher(args):
                          reward=batch['reward'].mean().item(),done_fraction=batch['done'].float().mean().item(),
                          recovery_fraction=batch['recovered'].float().mean().item(),recoveries=pool.env.nonfinite_state_recovery_count,
                          elapsed_seconds=time.monotonic()-t0,transitions_per_second=len(batch['reward'])/(time.monotonic()-tick))
+                if args.resume:m.update(incremental_updates=last-start,incremental_transitions=(last-start)*cfg['num_envs']*cfg['rollout_steps'])
                 log_metrics(log,writer,m)
-                if last%cfg['checkpoint_interval']==0:checkpoint(out/f'checkpoint_{last}.pt',model,optimizer,'A',last,cfg,digest,{},controls)
+                if last%cfg['checkpoint_interval']==0:checkpoint(out/f'checkpoint_{last}.pt',model,optimizer,'A',last,cfg,digest,teacher_parents,controls)
                 if args.max_minutes and time.monotonic()-t0>=args.max_minutes*60:break
-        checkpoint(out/'checkpoint_final.pt',model,optimizer,'A',last,cfg,digest,{},controls)
+        checkpoint(out/'checkpoint_final.pt',model,optimizer,'A',last,cfg,digest,teacher_parents,controls)
         write_json(out/'result.json',dict(status='complete',stage=stage_name('A',cfg),robot=args.robot,updates=last,requested_updates=cfg['updates'],
-                                        elapsed_seconds=time.monotonic()-t0,ready_for_B='requires full validation gate'))
+                                        elapsed_seconds=time.monotonic()-t0,ready_for_B='requires full validation gate',start_update=start,additional_updates=last-start,additional_transitions=(last-start)*cfg['num_envs']*cfg['rollout_steps']))
     finally:
         writer.close()
         if pool is not None:pool.close()
@@ -319,8 +357,15 @@ def supervised_update(stage,model,optimizer,bank,replays,cfg):
         for robot,replay in replays.items():
             b=replay.sample(cfg['batch_size'],bank.device);commands=bank.gather(b['motion'],b['frame'])
             if stage=='B':
-                mean=student_mean(model,robot,b['proprio'],commands['human'],'human')
-                loss=action_mse(mean,b['target']);row[robot+'/action_mse']=float(loss.detach())
+                if getattr(model.heads,'kind',None)=='flow':
+                    hidden=student_features(model,robot,b['proprio'],commands['human'],'human')
+                    loss=model.heads.matching_loss(robot,hidden,b['target'])
+                    row[robot+'/flow_mse']=float(loss.detach())
+                    with torch.no_grad():mean=model.heads.predict(robot,hidden.detach())
+                else:
+                    mean=student_mean(model,robot,b['proprio'],commands['human'],'human')
+                    loss=action_mse(mean,b['target'])
+                row[robot+'/action_mse']=float(action_mse(mean,b['target']).detach())
             else:
                 loss,z,act=stage_c_loss(model,robot,b['proprio'],commands,b['target'],cfg['stage_c']['token_weight'],cfg['stage_c']['action_weight'])
                 row[robot+'/token_mse']=float(z.detach());row[robot+'/action_mse']=float(act.detach())
@@ -358,13 +403,15 @@ def train_student(args,stage):
             write_json(out/f'{robot}_environment.json',pool.resolved_config)
         if stage=='B':
             model=XWBCPolicy(bank.dims,{r:p.proprio_dim for r,p in pools.items()},{r:p.action_dim for r,p in pools.items()},
-                              cfg['token_dim'],cfg['hidden'],'shared',encoder_hidden=cfg['encoder_hidden'],transformer=cfg.get('transformer')).to(bank.device)
+                              cfg['token_dim'],cfg['hidden'],'shared',encoder_hidden=cfg['encoder_hidden'],transformer=cfg.get('transformer'),student_fsq=cfg.get('student_fsq'),action_decoder=cfg.get('action_decoder')).to(bank.device)
         params=configure_student(model,stage);optimizer=torch.optim.Adam(params,lr=cfg['learning_rate'])
         replay={r:Reservoir(cfg['replay_capacity'],cfg['seed']+i) for i,r in enumerate(ROBOTS)}
         anchor_frozen=frozen_digest(model) if stage=='C' else None
         start=restore_optimizer(args,model,optimizer,cfg,stage,digest,replay,parents)
         if start>=cfg['updates']:raise ValueError('Update target must exceed the resumed update')
         reference_frozen=frozen_digest(model)
+        if stage=='B' and cfg.get('student_fsq') is not None:
+            torch.save({k:v.detach().cpu() for k,v in model.state_dict().items()},out/'initial_model.pt')
         if stage=='C' and reference_frozen!=anchor_frozen:raise ValueError('Resume executor differs from approved Human anchor')
         write_json(out/'model.json',model.constructor)
         write_json(out/'trainable_parameters.json',[name for name,p in model.named_parameters() if p.requires_grad])
@@ -397,12 +444,18 @@ def train_student(args,stage):
 def evaluate(args):
     runtime_setup();seed_all(args.seed)
     model,state=load_model(args.checkpoint);stage=semantic_stage(state['stage']);cfg=copy.deepcopy(state['config'])
+    flow_steps=getattr(args,'flow_steps',None)
+    if flow_steps is not None:
+        if args.split!='val' or getattr(getattr(model,'heads',None),'kind',None)!='flow' or flow_steps<=0:
+            raise ValueError('Flow step override requires a flow model and validation split')
+        model.heads.steps=flow_steps
     if args.dataset:cfg['dataset']=str(Path(args.dataset).resolve())
     if state['dataset_digest']!=sha256(Path(cfg['dataset'])/'dataset.json'):raise ValueError('Evaluation dataset differs')
     out=Path(args.output);out.mkdir(parents=True,exist_ok=False)
     teacher_robot=model.robot if stage=='A' else None
     bank=make_bank(cfg,args.split,teacher_robot);count=min(len(bank.rows),args.max_motions or len(bank.rows))
     robots=[teacher_robot] if stage=='A' else list(ROBOTS);results=[]
+    action_diagnostics={} if cfg.get('action_decoder') else None
     for robot in robots:
         local_cfg=dict(cfg,num_envs=min(args.num_envs,count));pool=create_pool(robot,bank,local_cfg,evaluation=True)
         try:
@@ -411,16 +464,27 @@ def evaluate(args):
             sources=[robot] if stage=='A' else (['human'] if stage=='B' else list(SOURCES))
             for source in sources:
                 pool.fixed_source=SOURCES.index(source)
+                if action_diagnostics is not None:
+                    diag=action_diagnostics[source+'->'+robot]=dict(requested_delta_sq=0.,applied_pd_target_delta_sq_rad=0.,transitions=0)
                 for start in range(0,count,pool.num_envs):
                     real=min(pool.num_envs,count-start);motion=torch.arange(start,start+pool.num_envs,device=bank.device).clamp_max(count-1)
                     pool.command.fixed_motion_ids=motion;seed_all(args.seed+start);pool.reset(pool.all_ids)
                     active=torch.arange(pool.num_envs,device=bank.device)<real
                     sums={k:torch.zeros(pool.num_envs,device=bank.device) for k in pool.metrics()};steps=torch.zeros(pool.num_envs,device=bank.device,dtype=torch.long)
+                    previous_requested=None
                     while active.any():
                         with torch.no_grad():
                             obs=pool.observe();commands=bank.gather(obs['motion'],obs['frame'])
                             mean=query_teacher(model,pool,obs,commands) if stage=='A' else student_mean(model,robot,obs['proprio'],commands[source],source)
+                            if action_diagnostics is not None:
+                                previous_applied=pool.env.action_manager.applied_action.clone()
                             transition,_=pool.step(mean,mean)
+                            if action_diagnostics is not None and previous_requested is not None:
+                                diag['requested_delta_sq']+=float((mean-previous_requested).square().mean(-1)[active].sum())
+                                applied_delta=(pool.env.action_manager.applied_action-previous_applied)*pool.env.action_manager.action_scaling
+                                diag['applied_pd_target_delta_sq_rad']+=float(applied_delta.square().mean(-1)[active].sum())
+                                diag['transitions']+=int(active.sum())
+                            previous_requested=mean.clone()
                             for k,v in pool.metrics().items():sums[k][active]+=v[active]
                             steps[active]+=1;complete=pool.command.t>=pool.command.lengths-1;recovered=pool.env._nonfinite_state_mask
                             finished=active&(transition['done'].squeeze(-1)|complete)
@@ -457,6 +521,15 @@ def evaluate(args):
             'completion_delta_pp':100*(m['completion']-summary['baselines'][route]['completion']),
             'root_relative_error_delta_m':m['mpkpe_root_relative_m']-summary['baselines'][route]['mpkpe_root_relative_m']
         } for route,m in matrix.items()}
+    if cfg.get('action_decoder'):
+        summary['action_decoder']=cfg['action_decoder']
+        summary['inference']=dict(kind=model.heads.kind,steps=model.heads.steps if model.heads.kind=='flow' else 1,initialization='zero' if model.heads.kind=='flow' else None,primary=flow_steps is None)
+    if action_diagnostics is not None:
+        for diag in action_diagnostics.values():
+            n=max(1,diag['transitions'])
+            diag['requested_delta_rms']=(diag['requested_delta_sq']/n)**.5
+            diag['applied_pd_target_delta_rms_rad']=(diag['applied_pd_target_delta_sq_rad']/n)**.5
+        write_json(out/'action_diagnostics.json',dict(first_step_excluded=True,active_steps_only=True,routes=action_diagnostics))
     write_json(out/'summary.json',summary)
     gate={**gate_decision(summary),'summary_sha256':sha256(out/'summary.json')}
     write_json(out/'gate.json',gate);print(json.dumps(gate),flush=True)
@@ -477,6 +550,7 @@ def main():
     q=sub.add_parser('evaluate');q.add_argument('--checkpoint',required=True);q.add_argument('--output',required=True)
     q.add_argument('--dataset');q.add_argument('--split',choices=['val','test'],default='val');q.add_argument('--seed',type=int,default=42)
     q.add_argument('--num-envs',type=int,default=64);q.add_argument('--max-motions',type=int)
+    q.add_argument('--flow-steps',type=int,help='Validation-only secondary solver diagnostic')
     args=p.parse_args()
     if args.mode=='teacher':train_teacher(args)
     elif args.mode=='student':train_student(args,'B')

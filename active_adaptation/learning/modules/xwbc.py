@@ -16,7 +16,7 @@ def mlp(dim, widths):
 
 
 class XWBCPolicy(nn.Module):
-    def __init__(self, command_dims, proprio_dims, action_dims, token_dim=128, hidden=(512, 512, 256), variant='shared', encoder_hidden=None, transformer=None):
+    def __init__(self, command_dims, proprio_dims, action_dims, token_dim=128, hidden=(512, 512, 256), variant='shared', encoder_hidden=None, transformer=None, student_fsq=None, action_decoder=None):
         super().__init__()
         if variant not in ('shared', 'independent', 'no_align'):
             raise ValueError(variant)
@@ -27,6 +27,14 @@ class XWBCPolicy(nn.Module):
                                 token_dim=token_dim, hidden=list(hidden), variant=variant, encoder_hidden=encoder_hidden)
         groups = self.robots if variant == 'independent' else ('shared',)
         self.encoders = nn.ModuleDict({g: nn.ModuleDict({s: mlp(command_dims[s], [*encoder_hidden, token_dim]) for s in SOURCES}) for g in groups})
+        # Parameter-free tail: every command path (DAgger, actor, evaluation) uses FSQ.
+        # Appending after construction preserves baseline RNG draws and parameter keys.
+        if student_fsq is not None:
+            from .student_latent_quantizer import StudentLatentQuantizer
+            self.constructor['student_fsq'] = dict(student_fsq)
+            for encoders in self.encoders.values():
+                for encoder in encoders.values():
+                    encoder.add_module('fsq', StudentLatentQuantizer(**student_fsq))
         self.backbones = nn.ModuleDict({g: mlp(token_dim*2, hidden) for g in groups})
         if transformer is not None:
             from active_adaptation.learning.modules.xwbc_transformer import FusionTransformer
@@ -40,16 +48,30 @@ class XWBCPolicy(nn.Module):
             nn.init.orthogonal_(head.weight, gain=.01)
             nn.init.zeros_(head.bias)
 
+        if action_decoder is not None:
+            if variant != 'shared':
+                raise ValueError('Experimental action decoders require the shared policy')
+            from .xwbc_action_decoder import ActionDecoder
+            self.constructor['action_decoder'] = dict(action_decoder)
+            self.heads = ActionDecoder(hidden[-1], action_dims, **action_decoder)
+
+    def decode_action(self, robot, hidden):
+        if hasattr(self.heads, 'predict'):
+            return self.heads.predict(robot, hidden)
+        return self.heads[robot](hidden)
+
     def tokens(self, robot, commands):
         group = robot if self.variant == 'independent' else 'shared'
         return torch.stack([self.encoders[group][s](commands[s]) for s in SOURCES], 1)
 
     def actor(self, robot, proprio, source, commands):
+        if getattr(self.heads, 'kind', None) == 'flow':
+            raise RuntimeError('Flow endpoints are not Gaussian means; use the staged deterministic action API')
         tokens = self.tokens(robot, commands)
         chosen = tokens[torch.arange(len(source), device=source.device), source]
         group = robot if self.variant == 'independent' else 'shared'
         hidden = self.backbones[group](torch.cat((chosen, self.proprio[robot](proprio)), -1))
-        mean = self.heads[robot](hidden)
+        mean = self.decode_action(robot, hidden)
         return Normal(mean, self.log_std[robot].clamp(-5, 1).exp()), tokens
 
     def value(self, robot, proprio, privileged):

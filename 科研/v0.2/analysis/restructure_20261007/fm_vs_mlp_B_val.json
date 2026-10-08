@@ -1,0 +1,74 @@
+{
+  "baseline": "/root/kube-user/lyk/project/HEFT_XWBC/logs/v0.2/action_decoder_20261007/formal/decoder_mlp/student_human/eval_val",
+  "candidate": "/root/kube-user/lyk/project/HEFT_XWBC/logs/v0.2/action_decoder_20261007/formal/flow/student_human/eval_val",
+  "split": "val",
+  "baseline_sha256": "e5c106f76778879db09d87169fc374665572dbd6e18d2958ef6f68a747af289a",
+  "candidate_sha256": "7479bb99ddd50b8f773723ef0d3e7b5ad207e3b846165756b68cb28dc100b2eb",
+  "records": 1000,
+  "routes": {
+    "human->g1": {
+      "baseline_success": 0.954,
+      "candidate_success": 0.956,
+      "success_delta_pp": 0.20000000000000018,
+      "success_delta_ci95_pp": [
+        -1.4404034618811252,
+        1.8218623481781377
+      ],
+      "completion_delta_pp": 0.04661270186091526,
+      "root_relative_error_delta_m": -0.00789759577546828,
+      "world_error_delta_m": -0.10738488226681975,
+      "baseline_recoveries": 0,
+      "candidate_recoveries": 0
+    },
+    "human->roban": {
+      "baseline_success": 0.928,
+      "candidate_success": 0.94,
+      "success_delta_pp": 1.19999999999999,
+      "success_delta_ci95_pp": [
+        -0.8565310492505354,
+        3.4158238829136645
+      ],
+      "completion_delta_pp": 0.2865451026583421,
+      "root_relative_error_delta_m": -0.010489497063749256,
+      "world_error_delta_m": -0.00010898667402337026,
+      "baseline_recoveries": 2,
+      "candidate_recoveries": 2
+    }
+  },
+  "means": {
+    "success_rate": {
+      "baseline": 0.9410000000000001,
+      "candidate": 0.948
+    },
+    "completion": {
+      "baseline": 0.9705663040547209,
+      "candidate": 0.9722320930773172
+    },
+    "mpkpe_root_relative_m": {
+      "baseline": 0.08850857599015702,
+      "candidate": 0.07931502957054826
+    },
+    "mpkpe_world_m": {
+      "baseline": 0.9314036578347475,
+      "candidate": 0.877656723364326
+    }
+  },
+  "pooled_success_delta_ci95_pp": [
+    -0.5932413156569893,
+    1.9646365422396856
+  ],
+  "mean_delta_family_ci95": {
+    "completion_pp": [
+      -0.6589582768487495,
+      0.9665668091844757
+    ],
+    "mpkpe_root_relative_m": [
+      -0.01317940614893103,
+      -0.00542698267923279
+    ],
+    "mpkpe_world_m": [
+      -0.11828313687378239,
+      0.008509651331781389
+    ]
+  }
+}

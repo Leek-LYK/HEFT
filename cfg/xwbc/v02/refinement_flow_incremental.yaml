@@ -1,0 +1,41 @@
+_base_: source_adaptation.yaml
+incremental_experiment: teacher15k_flow8
+method: flow8_E2300_incremental_teacher_comparison
+parent_stage: E
+expected_student_update: 2300
+updates: 1000
+num_envs: 1024
+rollout_steps: 16
+supervised_steps: 16
+batch_size: 1024
+learning_rate: 0.00001
+checkpoint_interval: 100
+anchor_weight: 0.1
+train_sources: true
+budget_schedule:
+  - until_update: 1000
+    supervised_steps: 16
+    batch_size: 1024
+student_fsq:
+  enabled: true
+  scale: 4.499549865722656
+action_decoder:
+  kind: flow
+  width: 256
+  steps: 8
+  action_embed: 64
+  time_embed: 32
+  robot_embed: 16
+  init_seed: 12345
+  noise_seed: 314159
+teacher_acceptance:
+  world_error_is_diagnostic: true
+  teacher_success: 0.90
+  teacher_completion: 0.95
+  max_recovery_clip_fraction: 0.01
+  teacher_relative_mpkpe: 0.10
+  teacher_world_mpkpe: 0.15
+  student_success_drop: 0.05
+  student_completion_drop: 0.05
+  student_relative_error_increase_m: 0.02
+  student_world_error_increase_m: 0.05

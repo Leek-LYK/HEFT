@@ -10,17 +10,21 @@ humanoid whole-body motion tracking.
 
 ## Staged XWBC research (v0.2)
 
-Native privileged teachers, a Human-only shared DAgger student, then frozen-anchor
-robot command encoders. Use `scripts/run_xwbc_staged.sh`; see
-[the staged experiment guide](docs/xwbc_v0.2分阶段训练.md).
+Start with the [research overview](科研/v0.2/00_研究总览.md) and the
+[stage and architecture diagrams](docs/xwbc各类实验_训练阶段与网络图解.md).
+Each experiment has one complete note covering its question, architecture,
+training recipe, results, and reproducible evidence.
 
-The v0.2 branch also preserves controlled PPO finetuning, six-route teacher
-refinement, the no-C ablation, joint supervised training, and the Transformer
-backbone experiment. See the [no-C results](科研/v0.2/11_去除C阶段完整评估结论.md),
-[joint-training results](科研/v0.2/13_U阶段完整评估与结论.md), and
-[Transformer experiment](科研/v0.2/14_Transformer主干对照实验.md).
-Research figures and selected analysis attachments are tracked under
-`科研/v0.2/analysis/`; datasets, checkpoints and full run logs remain external.
+The current research baseline reuses the native A teachers and trains a shared
+student through B→E with [FSQ command encoders](科研/v0.2/07_FSQ命令表征_当前主基线.md).
+The [Flow Matching versus capacity-matched MLP experiment](科研/v0.2/08_FlowMatching与MLP动作解码.md)
+compares action decoders on that baseline. The overview also links the foundational
+A→B→C route, PPO finetuning, teacher refinement, no-C ablation, joint training,
+and the Transformer negative result.
+
+See the [staged training guide](docs/xwbc_v0.2分阶段训练.md) for commands and gates.
+Research figures and selected analysis attachments remain under `科研/v0.2/analysis/`;
+datasets, checkpoints and full run logs remain external.
 
 ## Cross-embodiment research (XWBC)
 
